@@ -1,27 +1,25 @@
 'use client';
 import { useState } from 'react';
 import BirthForm from '@/components/BirthForm';
-import ChartBoard from '@/components/ChartBoard';
 import InsightPanel from '@/components/InsightPanel';
-import TimeNav, { type TimeView } from '@/components/TimeNav';
 import { generateChart } from '@/lib/ziwei/algorithm';
-import type { BirthInfo, ZiweiChart, Palace } from '@/lib/ziwei/types';
+import type { BirthInfo, ZiweiChart } from '@/lib/ziwei/types';
+import { Iztrolabe } from 'react-iztro';
+import 'react-iztro/lib/Iztrolabe/Iztrolabe.css';
+import 'react-iztro/lib/Izpalace/Izpalace.css';
+import 'react-iztro/lib/IzpalaceCenter/IzpalaceCenter.css';
+import 'react-iztro/lib/theme/default.css';
 
 /**
- * 命盘页 —— 开源版「排盘引擎 Demo」
+ * 命盘页 —— P1 升级版
  *
- * 这是一个最小可运行示例：用本仓库的排盘引擎 generateChart() 配合基础 UI
- * 组件，渲染一张完整紫微命盘 + 基础解读，并支持本命 / 大限 / 流年切换。
- *
- * 说明：线上商业版的完整交互界面（重设计的新 UI、AI 流式解读、合盘、分享
- * 卡片等）不在开源范围内；但排盘内核——安星算法、四化、格局识别、古籍库——
- * 完全开放（见 lib/ziwei/*），可自由二次开发出你自己的界面。
+ * 盘面：react-iztro 星盘组件（Iztrolabe，自包含排盘渲染 + 中宫运限控制）
+ * 解读：InsightPanel（AI 流式解读，基于 generateChart 的倪师数据层）
+ * 说明：两套排盘同源（iztro），口径一致（P0 已验证）；generateChart 仅供
+ *       InsightPanel 组织 AI 上下文，Iztrolabe 内部自行排盘渲染。
  */
 export default function ChartPage() {
   const [chart, setChart] = useState<ZiweiChart | null>(null);
-  const [selectedPalace, setSelectedPalace] = useState<Palace | null>(null);
-  const [view, setView] = useState<TimeView>('mingpan');
-  const [liunianYear, setLiunianYear] = useState(() => new Date().getFullYear());
 
   // ── 未起盘：展示出生信息表单 ──
   if (!chart) {
@@ -29,21 +27,21 @@ export default function ChartPage() {
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>紫微斗数排盘</h1>
         <p style={{ color: '#888', marginBottom: 32, fontSize: 14, lineHeight: 1.7 }}>
-          输入出生年月日时，开源排盘引擎即时生成命盘。
-          <br />
-          （本页为引擎 Demo，完整商业版界面不在开源范围；排盘内核完全开放。）
+          输入出生年月日时，即时生成命盘。
         </p>
         <BirthForm onSubmit={(info: BirthInfo) => setChart(generateChart(info))} />
       </main>
     );
   }
 
-  // ── 已起盘：命盘 + 解读 ──
+  const { year, month, day, hour, gender } = chart.birthInfo;
+
+  // ── 已起盘：react-iztro 星盘 + AI 解读 ──
   return (
-    <main style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 16px' }}>
+    <main style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 16px' }}>
       <button
         type="button"
-        onClick={() => { setChart(null); setSelectedPalace(null); }}
+        onClick={() => setChart(null)}
         style={{
           marginBottom: 16, padding: '6px 14px', cursor: 'pointer',
           border: '1px solid #ccc', borderRadius: 8, background: 'transparent',
@@ -52,14 +50,6 @@ export default function ChartPage() {
         ← 重新起盘
       </button>
 
-      <TimeNav
-        chart={chart}
-        view={view}
-        liunianYear={liunianYear}
-        onViewChange={setView}
-        onYearChange={setLiunianYear}
-      />
-
       <div
         style={{
           display: 'grid',
@@ -67,8 +57,18 @@ export default function ChartPage() {
           gap: 20, marginTop: 16, alignItems: 'start',
         }}
       >
-        <ChartBoard chart={chart} onPalaceSelect={setSelectedPalace} />
-        <InsightPanel chart={chart} selectedPalace={selectedPalace} />
+        <div className="iztro-theme-host">
+          <Iztrolabe
+            birthday={`${year}-${month}-${day}`}
+            birthTime={hour}
+            birthdayType="solar"
+            gender={gender}
+            lang="zh-CN"
+            // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
+            options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
+          />
+        </div>
+        <InsightPanel chart={chart} />
       </div>
     </main>
   );

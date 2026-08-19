@@ -1,0 +1,50 @@
+/* react-iztro 星盘主题覆盖（全局引入，供 /chart-compare 等页面使用）
+ * 仅覆盖 CSS 变量与少量类选择器，不动组件源码
+ */
+
+/* ── 倪师金：主星金棕 · 边框暖金 · 悬停宫位浅金 ── */
+.iztro-theme-host.theme-gold .iztro-astrolabe-theme-default {
+  --iztro-color-major: #8B5E34;
+  --iztro-color-focus: #5C3A1E;
+  --iztro-color-quan: #2F5DA8;
+  --iztro-color-tough: #7A3E2E;
+  --iztro-color-awesome: #C0392B;
+  --iztro-color-active: #B8860B;
+  --iztro-color-happy: #A33E74;
+  --iztro-color-nice: #2E6B34;
+  --iztro-color-decorator-1: #9A8B4F;
+  --iztro-color-decorator-2: #8A5A6E;
+  --iztro-color-text: #8A7B6B;
+  --iztro-color-border: #8B5E3418;
+}
+.iztro-theme-host.theme-gold .iztro-palace {
+  border-color: #8B5E3426;
+}
+.iztro-theme-host.theme-gold .iztro-palace.focused-palace {
+  background-color: rgba(180, 130, 60, 0.14);
+}
+.iztro-theme-host.theme-gold .iztro-palace.opposite-palace {
+  background-color: rgba(180, 130, 60, 0.08);
+}
+
+/* ── 墨蓝：主星深蓝 · 现代冷调 ── */
+.iztro-theme-host.theme-ocean .iztro-astrolabe-theme-default {
+  --iztro-color-major: #1F4E79;
+  --iztro-color-focus: #102A43;
+  --iztro-color-quan: #0B6E99;
+  --iztro-color-tough: #5C3D2E;
+  --iztro-color-awesome: #C0572B;
+  --iztro-color-active: #0077B6;
+  --iztro-color-happy: #B4538A;
+  --iztro-color-nice: #2D6A4F;
+  --iztro-color-decorator-1: #6B8F71;
+  --iztro-color-decorator-2: #7A6C8F;
+  --iztro-color-text: #5A6B7A;
+  --iztro-color-border: #1F4E7918;
+}
+.iztro-theme-host.theme-ocean .iztro-palace {
+  border-color: #1F4E7926;
+}
+.iztro-theme-host.theme-ocean .iztro-palace.focused-palace {
+  background-color: rgba(31, 78, 121, 0.12);
+}

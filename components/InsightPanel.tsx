@@ -189,6 +189,7 @@ export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: I
   const [activeTopic, setActiveTopic] = useState<string>('overview');
   const messagesRef = useRef<Message[]>([]); // always-current copy for closures
   const loadingRef = useRef(false);
+  const pendingRef = useRef(''); // loading 期间的输入排队，当前流结束后自动发送
   const autoLoaded = useRef(false);
   const lastPalaceBranch = useRef<number | undefined>(undefined);
   const lastSiHuaKey = useRef<string | undefined>(undefined);
@@ -314,11 +315,23 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
     } finally {
       setLoading(false);
       loadingRef.current = false;
+      // 发送排队中的消息（用户在 loading 期间输入的问题）
+      if (pendingRef.current) {
+        const next = pendingRef.current;
+        pendingRef.current = '';
+        sendMessage(next);
+      }
     }
   };
 
   const sendMessage = (text: string, hidden = false) => {
-    if (!text.trim() || loadingRef.current) return;
+    if (!text.trim()) return;
+    // loading 期间不丢弃：排队，等当前流式结束后自动发送
+    if (loadingRef.current) {
+      pendingRef.current = text;
+      setInput('');
+      return;
+    }
     loadingRef.current = true;
     setLoading(true);
 
@@ -335,8 +348,8 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
   };
 
   const handleTopicClick = (topicKey: string) => {
-    if (loadingRef.current) return;
     setActiveTopic(topicKey);
+    // 排队逻辑在 sendMessage 内统一处理
     sendMessage(TOPIC_PROMPTS[topicKey], true);
   };
 
@@ -438,8 +451,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="继续追问，如：今年适合换工作吗？"
-            disabled={loading}
+            placeholder={loading ? '正在解读中，输入后自动排队…' : '继续追问，如：今年适合换工作吗？'}
             className="flex-1 rounded-lg px-3 py-2 text-[11px] focus:outline-none transition-colors"
             style={{
               background: 'var(--t-card)',
