@@ -1,4 +1,5 @@
 'use client';
+import '@/lib/ziwei/iztro-brightness'; // 修正 iztro 太阴酉宫亮度（不→旺），须在排盘前执行
 import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import BirthForm, { type BirthFormState } from '@/components/BirthForm';

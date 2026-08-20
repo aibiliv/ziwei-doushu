@@ -1,5 +1,7 @@
 'use client';
+import '@/lib/ziwei/iztro-brightness'; // 修正 iztro 太阴酉宫亮度（不→旺），须在排盘前执行
 import { useState } from 'react';
+import LangSelect, { getStoredLang, type ChartLang } from '@/components/LangSelect';
 import { Iztrolabe } from 'react-iztro';
 import { astro } from 'iztro';
 import { generateChart } from '@/lib/ziwei/algorithm';
@@ -79,6 +81,12 @@ export default function ChartComparePage() {
   const [form, setForm] = useState<DemoForm>(DEFAULT_FORM);
   const [submitted, setSubmitted] = useState<DemoForm>(DEFAULT_FORM);
   const [theme, setTheme] = useState<ThemeKey>('default');
+  const [lang, setLang] = useState<ChartLang>(() => getStoredLang());
+
+  const handleLangChange = (v: ChartLang) => {
+    setLang(v);
+    if (typeof window !== 'undefined') window.localStorage.setItem('ziwei-chart-lang', v);
+  };
 
   const chart = generateChart(toBirthInfo(submitted));
   const iztroFields = getIztroKeyFields(submitted);
@@ -147,6 +155,9 @@ export default function ChartComparePage() {
                   {t.label}
                 </button>
               ))}
+              <span style={{ marginLeft: 6, verticalAlign: 'middle' }}>
+                <LangSelect value={lang} onChange={handleLangChange} />
+              </span>
             </span>
           </div>
           <div className={`iztro-theme-host ${theme !== 'default' ? `theme-${theme}` : ''}`}>
@@ -155,7 +166,7 @@ export default function ChartComparePage() {
               birthTime={submitted.hour}
               birthdayType="solar"
               gender={submitted.gender}
-              lang="zh-CN"
+              lang={lang}
               options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
             />
           </div>

@@ -1,10 +1,12 @@
 'use client';
+import '@/lib/ziwei/iztro-brightness'; // 修正 iztro 太阴酉宫亮度（不→旺），须在排盘前执行
 import { useMemo, useState, type MouseEvent } from 'react';
 import BirthForm, { type BirthFormState } from '@/components/BirthForm';
 import InsightPanel from '@/components/InsightPanel';
 import TimeNav, { type TimeView } from '@/components/TimeNav';
 import PatternsCard from '@/components/PatternsCard';
 import StarDetailPanel from '@/components/StarDetailPanel';
+import LangSelect, { getStoredLang, type ChartLang } from '@/components/LangSelect';
 import { generateChart } from '@/lib/ziwei/algorithm';
 import { useHistory } from '@/lib/ziwei/history';
 import { formToBirthInfo } from '@/lib/ziwei/share';
@@ -51,7 +53,13 @@ export default function ChartPage() {
   } | null>(null);
   const [selectedStar, setSelectedStar] = useState<Star | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const [lang, setLang] = useState<ChartLang>(() => getStoredLang());
   const { history, save: saveHistory, remove: removeHistory } = useHistory();
+
+  const handleLangChange = (v: ChartLang) => {
+    setLang(v);
+    if (typeof window !== 'undefined') window.localStorage.setItem('ziwei-chart-lang', v);
+  };
 
   // TimeNav 视图 → Iztrolabe 运限日期（本命盘用当前时间，大限用大限起始年，流年用所选年份）
   const horoscopeDate = useMemo(() => {
@@ -225,6 +233,9 @@ export default function ChartPage() {
             <span className="sep" />
             <span>{hourLabel}</span>
           </div>
+          <div style={{ marginLeft: 'auto' }}>
+            <LangSelect value={lang} onChange={handleLangChange} />
+          </div>
         </header>
 
         {/* 运限切换（本命 / 大限 / 流年 + 流年年份） */}
@@ -244,7 +255,7 @@ export default function ChartPage() {
               birthTime={hour}
               birthdayType="solar"
               gender={gender}
-              lang="zh-CN"
+              lang={lang}
               horoscopeDate={horoscopeDate}
               // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
               options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
