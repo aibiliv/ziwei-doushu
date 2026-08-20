@@ -20,6 +20,10 @@ interface InsightPanelProps {
   chart: ZiweiChart;
   selectedPalace?: Palace | null;
   selectedSiHua?: SelectedSiHua | null;
+  /** 历史回载时注入已保存的解读线程（挂载时初始化，仅生效一次） */
+  initialThreads?: Record<string, Message[]>;
+  /** 线程变化上报（防抖后调用，供父级持久化到历史） */
+  onThreadsChange?: (threads: Record<string, Message[]>) => void;
 }
 
 /** 专项解读（宫位 / 四化飞化）独立线程，不与 6 个维度混淆 */
@@ -185,15 +189,15 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
   );
 }
 
-export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: InsightPanelProps) {
-  // 每维度独立线程：key 为维度 key（6 个主题 + 专项）
-  const [threads, setThreads] = useState<Record<string, Message[]>>({});
+export default function InsightPanel({ chart, selectedPalace, selectedSiHua, initialThreads, onThreadsChange }: InsightPanelProps) {
+  // 每维度独立线程：key 为维度 key（6 个主题 + 专项）。历史回载时用已存线程初始化
+  const [threads, setThreads] = useState<Record<string, Message[]>>(() => initialThreads ?? {});
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingTab, setLoadingTab] = useState<string | null>(null);
 
-  const threadsRef = useRef<Record<string, Message[]>>({}); // always-current copy for closures
+  const threadsRef = useRef<Record<string, Message[]>>(initialThreads ?? {}); // always-current copy for closures
   const loadingRef = useRef(false);
   const pendingRef = useRef<{ tab: string; text: string } | null>(null); // loading 期间排队
   const lastPalaceBranch = useRef<number | undefined>(undefined);
@@ -203,6 +207,13 @@ export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: I
   // Keep refs in sync
   useEffect(() => { threadsRef.current = threads; }, [threads]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
+
+  // 线程变化上报（400ms 防抖：流式期间每帧都在 setThreads，直接写会刷爆 localStorage）
+  useEffect(() => {
+    if (!onThreadsChange) return;
+    const t = setTimeout(() => onThreadsChange(threads), 400);
+    return () => clearTimeout(t);
+  }, [threads, onThreadsChange]);
 
   // Auto-scroll（只在当前维度的线程内滚动，不撑长整页）
   useEffect(() => {

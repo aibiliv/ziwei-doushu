@@ -1,6 +1,6 @@
 'use client';
 import '@/lib/ziwei/iztro-brightness'; // 修正 iztro 太阴酉宫亮度（不→旺），须在排盘前执行
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, useRef, useState, type MouseEvent } from 'react';
 import BirthForm, { type BirthFormState } from '@/components/BirthForm';
 import InsightPanel from '@/components/InsightPanel';
 import TimeNav, { type TimeView } from '@/components/TimeNav';
@@ -8,7 +8,7 @@ import PatternsCard from '@/components/PatternsCard';
 import StarDetailPanel from '@/components/StarDetailPanel';
 import LangSelect, { getStoredLang, type ChartLang } from '@/components/LangSelect';
 import { generateChart } from '@/lib/ziwei/algorithm';
-import { useHistory } from '@/lib/ziwei/history';
+import { useHistory, matchHistoryEntry, readStoredHistory, type HistoryInsights } from '@/lib/ziwei/history';
 import { formToBirthInfo } from '@/lib/ziwei/share';
 import type { BirthInfo, Palace, Star, ZiweiChart } from '@/lib/ziwei/types';
 import { Iztrolabe } from 'react-iztro';
@@ -54,7 +54,12 @@ export default function ChartPage() {
   const [selectedStar, setSelectedStar] = useState<Star | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [lang, setLang] = useState<ChartLang>(() => getStoredLang());
-  const { history, save: saveHistory, remove: removeHistory } = useHistory();
+  // 解读 ↔ 历史绑定：当前命盘对应的历史条目 id 及其已存解读（回载时注入）
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [initialThreads, setInitialThreads] = useState<HistoryInsights | null>(null);
+  const lastCompleteFormRef = useRef<BirthFormState | null>(null); // 提交时用于匹配历史条目
+  const lastSavedInsightsRef = useRef(''); // 防重复写回：与上次已存内容相同则跳过
+  const { history, save: saveHistory, remove: removeHistory, updateInsights } = useHistory();
 
   const handleLangChange = (v: ChartLang) => {
     setLang(v);
@@ -77,13 +82,23 @@ export default function ChartPage() {
     return undefined; // mingpan：Iztrolabe 默认当前时间
   }, [view, liunianYear, chart]);
 
-  // 表单提交 → 排盘
+  // 表单提交 → 排盘（同时绑定历史条目：解读写回目标）
   const handleSubmit = (info: BirthInfo) => {
     setChart(generateChart(info));
     setView('mingpan');
     setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
+
+    // 用最近一次完整表单匹配历史条目（真太阳时校正后 hour 可能变，须用原始 clockHour/Minute）。
+    // 从 localStorage 读：saveHistory 同步写 localStorage、异步 setState，这里必须用最新值兜底
+    const form = lastCompleteFormRef.current;
+    const matched = form
+      ? matchHistoryEntry(readStoredHistory(), form)
+      : undefined;
+    setActiveHistoryId(matched?.id ?? null);
+    setInitialThreads(matched?.insights ?? null);
+    lastSavedInsightsRef.current = JSON.stringify(matched?.insights ?? {});
   };
 
   // 历史回载 → 重新起盘（防御：关键字段不齐全的历史直接忽略，避免 bySolar 收到非法日期）
@@ -92,8 +107,18 @@ export default function ChartPage() {
     const m = parseInt(form.month);
     const d = parseInt(form.day);
     if (!y || !m || !d || !form.gender) return;
+    lastCompleteFormRef.current = form; // 先于 handleSubmit，确保匹配到被点击的这条
     setFormKey(k => k + 1);
     handleSubmit(formToBirthInfo(form));
+  };
+
+  // 解读线程变化 → 写回历史（防抖已在 InsightPanel 内做；这里再去重：内容相同不写）
+  const handleThreadsChange = (threads: HistoryInsights) => {
+    if (!activeHistoryId) return;
+    const json = JSON.stringify(threads);
+    if (json === lastSavedInsightsRef.current) return;
+    lastSavedInsightsRef.current = json;
+    updateInsights(activeHistoryId, threads);
   };
 
   // ── 未起盘：出生信息表单 + 历史命盘 ──
@@ -111,6 +136,7 @@ export default function ChartPage() {
             onFormSave={(form) => {
               if (form.year && form.month && form.day && form.gender) {
                 saveHistory(form);
+                lastCompleteFormRef.current = form; // 记录最新完整表单，提交时用于匹配历史
               }
             }}
           />
@@ -215,6 +241,8 @@ export default function ChartPage() {
     setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
+    setActiveHistoryId(null);
+    setInitialThreads(null);
   };
 
   // ── 已起盘：react-iztro 星盘 + 格局卡片 + AI 解读 ──
@@ -265,7 +293,13 @@ export default function ChartPage() {
           {/* 右侧栏：格局识别 + AI 解读 */}
           <div className="chart-side">
             <PatternsCard chart={chart} />
-            <InsightPanel chart={chart} selectedPalace={selectedPalace} selectedSiHua={selectedSiHua} />
+            <InsightPanel
+              chart={chart}
+              selectedPalace={selectedPalace}
+              selectedSiHua={selectedSiHua}
+              initialThreads={initialThreads ?? undefined}
+              onThreadsChange={handleThreadsChange}
+            />
           </div>
         </div>
 
