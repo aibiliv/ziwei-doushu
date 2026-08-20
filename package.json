@@ -27,7 +27,7 @@
     "pg": "^8.20.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-iztro": "file:../react-ziweidoushu",
+    "react-iztro": "^1.3.5",
     "vercel": "^50.42.0"
   },
   "devDependencies": {
