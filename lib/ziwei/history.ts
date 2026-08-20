@@ -14,14 +14,31 @@ export interface HistoryEntry {
 export function useHistory() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
+  // 读取时过滤残缺记录（字段不齐的历史会导致回载时 bySolar 收到非法日期）
+  const isValidForm = (form: BirthFormState): boolean =>
+    !!form &&
+    !!parseInt(form.year) &&
+    !!parseInt(form.month) &&
+    !!parseInt(form.day) &&
+    !!form.gender;
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setHistory(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw) as HistoryEntry[];
+        const clean = parsed.filter(e => isValidForm(e.form));
+        setHistory(clean);
+        // 顺带清理脏数据，避免下次读取重复过滤
+        if (clean.length !== parsed.length) {
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clean)); } catch {}
+        }
+      }
     } catch { /* localStorage 不可用时静默失败 */ }
   }, []);
 
   const save = useCallback((form: BirthFormState) => {
+    if (!isValidForm(form)) return; // 只保存完整表单
     const label = [
       form.name,
       `${form.year}年${form.month}月${form.day}日`,
