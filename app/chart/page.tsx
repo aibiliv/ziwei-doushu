@@ -15,15 +15,17 @@ import 'react-iztro/lib/Izpalace/Izpalace.css';
 import 'react-iztro/lib/IzpalaceCenter/IzpalaceCenter.css';
 import 'react-iztro/lib/theme/default.css';
 
+const BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+
 /**
- * 命盘页 —— P1 升级版（组装孤儿功能）
+ * 命盘页 —— 升级版（组装孤儿功能）
  *
- * 盘面：react-iztro 星盘组件（Iztrolabe，自包含排盘渲染 + 中宫运限控制）
+ * 盘面：react-iztro 星盘组件（Iztrolabe，金主题 theme-gold，自包含排盘渲染 + 中宫运限控制）
  * 解读：InsightPanel（AI 流式解读，基于 generateChart 的倪师数据层）
  * 说明：两套排盘同源（iztro），口径一致（P0 已验证）；generateChart 仅供
  *       InsightPanel 组织 AI 上下文，Iztrolabe 内部自行排盘渲染。
  *
- * 运限：恢复顶部 TimeNav（本命/大限/流年切换 + 流年年份 +/-），
+ * 运限：顶部 TimeNav（本命/大限/流年切换 + 流年年份 +/-），
  *       选择结果通过 horoscopeDate 驱动 Iztrolabe 的运限日期；
  *       Iztrolabe 中宫按钮仍可在此基础上微调流月/流日/流时。
  *
@@ -86,71 +88,73 @@ export default function ChartPage() {
     handleSubmit(formToBirthInfo(form));
   };
 
-  // ── 未起盘：展示出生信息表单 + 历史命盘 ──
+  // ── 未起盘：出生信息表单 + 历史命盘 ──
   if (!chart) {
     return (
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>紫微斗数排盘</h1>
-        <p style={{ color: '#888', marginBottom: 32, fontSize: 14, lineHeight: 1.7 }}>
-          输入出生年月日时，即时生成命盘。
-        </p>
-        <BirthForm
-          key={formKey}
-          onSubmit={handleSubmit}
-          // 只在关键字段齐全时才写入历史（BirthForm 每次表单变化都会触发 onFormSave，
-          // 不加这道闸会把残缺表单存进 localStorage，回载时 bySolar 收到非法日期）
-          onFormSave={(form) => {
-            if (form.year && form.month && form.day && form.gender) {
-              saveHistory(form);
-            }
-          }}
-        />
+      <main className="chart-stage-bg">
+        <div className="chart-main-inner form-wrap">
+          <h1 className="form-title">紫微斗数排盘</h1>
+          <p className="form-sub">输入出生年月日时，即时生成命盘。</p>
+          <BirthForm
+            key={formKey}
+            onSubmit={handleSubmit}
+            // 只在关键字段齐全时才写入历史（BirthForm 每次表单变化都会触发 onFormSave，
+            // 不加这道闸会把残缺表单存进 localStorage，回载时 bySolar 收到非法日期）
+            onFormSave={(form) => {
+              if (form.year && form.month && form.day && form.gender) {
+                saveHistory(form);
+              }
+            }}
+          />
 
-        {/* 历史命盘 */}
-        {history.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontSize: 11, letterSpacing: '0.2em',
-              color: '#999', marginBottom: 12,
-            }}>
-              历史命盘
-              <span style={{ flex: 1, height: 1, background: 'var(--t-border)' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {history.map(entry => (
-                <div
-                  key={entry.id}
-                  onClick={() => handleLoadHistory(entry.form)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 14px', cursor: 'pointer',
-                    background: 'var(--t-card)',
-                    border: '1px solid var(--t-border)',
-                    borderRadius: 10,
-                    fontSize: 12, color: 'var(--t-text2)',
-                  }}
-                >
-                  <span style={{ color: 'var(--t-gold)', opacity: 0.5 }}>☯</span>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {entry.label}
-                  </span>
-                  <button
-                    onClick={e => { e.stopPropagation(); removeHistory(entry.id); }}
-                    style={{ color: '#999', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+          {/* 历史命盘 */}
+          {history.length > 0 && (
+            <div style={{ marginTop: 32 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 11, letterSpacing: '0.2em',
+                color: 'var(--tx-3)', marginBottom: 12,
+              }}>
+                历史命盘
+                <span style={{ flex: 1, height: 1, background: 'var(--t-border)' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {history.map(entry => (
+                  <div
+                    key={entry.id}
+                    onClick={() => handleLoadHistory(entry.form)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', cursor: 'pointer',
+                      background: 'var(--t-card)',
+                      border: '1px solid var(--t-border)',
+                      borderRadius: 10,
+                      fontSize: 12, color: 'var(--t-text2)',
+                    }}
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <span style={{ color: 'var(--t-gold)', opacity: 0.5 }}>☯</span>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.label}
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeHistory(entry.id); }}
+                      style={{ color: 'var(--tx-3)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
     );
   }
 
   const { year, month, day, hour, gender } = chart.birthInfo;
+  const genderLabel = gender === 'male' ? '男命' : '女命';
+  const hourLabel = `${BRANCHES[hour] ?? ''}时`;
 
   // 事件委托：四化徽章 → 飞化分析；星曜 → 星曜详情；宫位 → 宫位解读
   const handleAstrolabeClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -197,91 +201,78 @@ export default function ChartPage() {
     }
   };
 
+  const resetChart = () => {
+    setChart(null);
+    setView('mingpan');
+    setSelectedPalace(null);
+    setSelectedSiHua(null);
+    setSelectedStar(null);
+  };
+
   // ── 已起盘：react-iztro 星盘 + 格局卡片 + AI 解读 ──
   return (
-    <main style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 16px' }}>
-      <button
-        type="button"
-        onClick={() => {
-          setChart(null);
-          setView('mingpan');
-          setSelectedPalace(null);
-          setSelectedSiHua(null);
-          setSelectedStar(null);
-        }}
-        style={{
-          marginBottom: 16, padding: '6px 14px', cursor: 'pointer',
-          border: '1px solid #ccc', borderRadius: 8, background: 'transparent',
-        }}
-      >
-        ← 重新起盘
-      </button>
+    <main className="chart-stage-bg">
+      <div className="chart-main-inner">
+        {/* 顶栏：重新起盘 + 出生摘要 */}
+        <header className="chart-header">
+          <button type="button" className="chart-back-btn" onClick={resetChart}>
+            ← 重新起盘
+          </button>
+          <div className="birth-chip">
+            <span className="accent">{genderLabel}</span>
+            <span className="sep" />
+            <span>阳历 {year}年{month}月{day}日</span>
+            <span className="sep" />
+            <span>{hourLabel}</span>
+          </div>
+        </header>
 
-      {/* 运限切换（本命 / 大限 / 流年 + 流年年份） */}
-      <TimeNav
-        chart={chart}
-        view={view}
-        liunianYear={liunianYear}
-        onViewChange={setView}
-        onYearChange={setLiunianYear}
-      />
+        {/* 运限切换（本命 / 大限 / 流年 + 流年年份） */}
+        <TimeNav
+          chart={chart}
+          view={view}
+          liunianYear={liunianYear}
+          onViewChange={setView}
+          onYearChange={setLiunianYear}
+        />
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 380px)',
-          gap: 20, marginTop: 16, alignItems: 'start',
-        }}
-      >
-        <div className="iztro-theme-host" onClick={handleAstrolabeClick}>
-          <Iztrolabe
-            birthday={`${year}-${month}-${day}`}
-            birthTime={hour}
-            birthdayType="solar"
-            gender={gender}
-            lang="zh-CN"
-            horoscopeDate={horoscopeDate}
-            // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
-            options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          {/* 格局识别卡片（孤儿功能组装 1） */}
-          <PatternsCard chart={chart} />
-
-          <InsightPanel chart={chart} selectedPalace={selectedPalace} selectedSiHua={selectedSiHua} />
-        </div>
-      </div>
-
-      {/* 星曜详情弹窗（孤儿功能组装 2，点击盘面主星弹出，居中遮罩） */}
-      {selectedStar && (
-        <div
-          onClick={() => setSelectedStar(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 100,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '20px',
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: 'min(520px, 100%)', maxHeight: '85vh', overflowY: 'auto',
-              borderRadius: 16,
-            }}
-          >
-            <StarDetailPanel
-              star={selectedStar}
-              palaceName={chart.palaces.find(p =>
-                p.stars.some(s => s.name === selectedStar.name)
-              )?.name}
-              onClose={() => setSelectedStar(null)}
+        <div className="chart-grid">
+          {/* 盘面：Iztrolabe 金主题，白卡框住 */}
+          <div className="astrolabe-shell iztro-theme-host theme-gold" onClick={handleAstrolabeClick}>
+            <Iztrolabe
+              birthday={`${year}-${month}-${day}`}
+              birthTime={hour}
+              birthdayType="solar"
+              gender={gender}
+              lang="zh-CN"
+              horoscopeDate={horoscopeDate}
+              // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
+              options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
             />
           </div>
+
+          {/* 右侧栏：格局识别 + AI 解读 */}
+          <div className="chart-side">
+            <PatternsCard chart={chart} />
+            <InsightPanel chart={chart} selectedPalace={selectedPalace} selectedSiHua={selectedSiHua} />
+          </div>
         </div>
-      )}
+
+        {/* 星曜详情弹窗（孤儿功能组装 2，点击盘面主星弹出，居中遮罩） */}
+        {selectedStar && (
+          <div className="star-modal-mask" onClick={() => setSelectedStar(null)}>
+            <div className="star-modal-box" onClick={e => e.stopPropagation()}>
+              <StarDetailPanel
+                star={selectedStar}
+                palaceName={chart.palaces.find(p =>
+                  p.stars.some(s => s.name === selectedStar.name)
+                )?.name}
+                onClose={() => setSelectedStar(null)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

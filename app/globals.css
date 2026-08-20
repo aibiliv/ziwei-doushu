@@ -58,6 +58,25 @@
   --r-pill:999px;
 }
 
+/* ─── 兼容层：旧 --t-* 令牌 → 2.0 设计系统 ──────────────────
+ * ChartBoard / PatternsCard / InsightPanel / TimeNav 等十余个组件仍引用
+ * 初始版的 --t-* 令牌，2.0 升级时未迁移，导致全局 undefined、组件在
+ * 「无颜色」状态下渲染（本地比官方站丑的根因）。这里做一层映射，让它们
+ * 恢复金+米色的官方观感，并保持暗色模式同步。
+ */
+:root {
+  --t-gold:       var(--ac);
+  --t-bg:         var(--bg-card);
+  --t-surface:    var(--bg-1);
+  --t-card:       var(--bg-card);
+  --t-border:     var(--bdr);
+  --t-border-acc: var(--ac-bdr);
+  --t-text:       var(--tx-0);
+  --t-text1:      var(--tx-1);
+  --t-text2:      var(--tx-2);
+  --t-faint:      var(--tx-3);
+}
+
 /* ─── 暗色模式 Token 覆盖 ──────────────────────────────── */
 [data-theme="dark"] {
   --bg-0: #020810;
@@ -271,6 +290,143 @@ body {
 }
 .input-base:focus { border-color: var(--tx-0); }
 .input-base::placeholder { color: var(--tx-3); }
+
+/* ─── 玻璃卡片外壳（全局共用） ────────────────────────────
+ * PatternsCard / InsightPanel / StarDetailPanel / ChatPanel /
+ * ChartSummary / FamousPersonCard 都引用这两个类，但此前全树
+ * 从未定义，导致这些面板是「裸文本」浮在页面上（本地比官方站散乱
+ * 的实打实 bug）。这里补上，统一为白底 + 细描边 + 轻投影的卡片。
+ */
+.card-glass {
+  background: var(--bg-card);
+  border: 1px solid var(--bdr);
+  box-shadow: var(--sh-md);
+}
+.card-inner {
+  background: var(--bg-1);
+  border: 1px solid var(--bdr);
+}
+
+/* ─── 命盘页（/chart）统一布局系统 ─────────────────────── */
+/* 整页氛围：米色底 + 右上角极淡金光，墨金+米色双主色，温暖不刺眼 */
+.chart-stage-bg {
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 560px at 82% -12%, rgba(184,146,42,0.06), transparent 60%),
+    var(--bg-page);
+}
+.chart-main-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 24px 56px;
+}
+
+/* 顶栏：重新起盘 + 出生摘要 */
+.chart-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.chart-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--r-pill);
+  background: var(--bg-card);
+  border: 1px solid var(--bdr);
+  color: var(--tx-1);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--sh-xs);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+.chart-back-btn:hover { border-color: var(--ac-bdr); color: var(--ac-dim); }
+.chart-back-btn:active { transform: scale(0.98); }
+
+.birth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-radius: var(--r-pill);
+  background: var(--bg-card);
+  border: 1px solid var(--bdr);
+  font-size: 12px;
+  color: var(--tx-2);
+  box-shadow: var(--sh-xs);
+}
+.birth-chip b { color: var(--tx-0); font-weight: 600; }
+.birth-chip .sep { width: 1px; height: 12px; background: var(--bdr-med); }
+.birth-chip .accent { color: var(--ac-dim); }
+
+/* 盘面外壳：白卡框住 Iztrolabe 金主题盘，居中 */
+.astrolabe-shell {
+  background: var(--bg-card);
+  border: 1px solid var(--bdr);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+  padding: 22px;
+  display: flex;
+  justify-content: center;
+}
+.astrolabe-shell .iztro-astrolabe { width: 100%; }
+
+/* 主栅格：盘面 + 右侧栏 */
+.chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  gap: 24px;
+  align-items: start;
+  margin-top: 16px;
+}
+.chart-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 表单视图 */
+.form-wrap { animation: fade-up 0.5s ease forwards; }
+.form-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--tx-0);
+  letter-spacing: -0.01em;
+}
+.form-sub { color: var(--tx-3); margin-bottom: 32px; font-size: 14px; line-height: 1.7; }
+
+/* 星曜详情弹窗外壳 */
+.star-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(13,13,11,0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.star-modal-box {
+  width: min(520px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: var(--r-lg);
+}
+
+/* 手机版：栅格堆叠 */
+@media (max-width: 860px) {
+  .chart-main-inner { padding: 20px 14px 40px; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .astrolabe-shell { padding: 14px; }
+}
 
 /* 分隔线 */
 .divider {

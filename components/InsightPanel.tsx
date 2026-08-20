@@ -22,6 +22,9 @@ interface InsightPanelProps {
   selectedSiHua?: SelectedSiHua | null;
 }
 
+/** 专项解读（宫位 / 四化飞化）独立线程，不与 6 个维度混淆 */
+const ADVISORY = 'advisory';
+
 const TOPICS = [
   { key: 'overview',     label: '命格' },
   { key: 'love',        label: '感情' },
@@ -183,37 +186,34 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
 }
 
 export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: InsightPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // 每维度独立线程：key 为维度 key（6 个主题 + 专项）
+  const [threads, setThreads] = useState<Record<string, Message[]>>({});
+  const [activeTab, setActiveTab] = useState<string>('overview');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<string>('overview');
-  const messagesRef = useRef<Message[]>([]); // always-current copy for closures
+  const [loadingTab, setLoadingTab] = useState<string | null>(null);
+
+  const threadsRef = useRef<Record<string, Message[]>>({}); // always-current copy for closures
   const loadingRef = useRef(false);
-  const pendingRef = useRef(''); // loading 期间的输入排队，当前流结束后自动发送
-  const autoLoaded = useRef(false);
+  const pendingRef = useRef<{ tab: string; text: string } | null>(null); // loading 期间排队
   const lastPalaceBranch = useRef<number | undefined>(undefined);
   const lastSiHuaKey = useRef<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Keep refs in sync
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { threadsRef.current = threads; }, [threads]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
 
-  // Auto-scroll
+  // Auto-scroll（只在当前维度的线程内滚动，不撑长整页）
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [threads, activeTab]);
 
-  // Auto-generate 命格总览 on mount
-  useEffect(() => {
-    if (autoLoaded.current) return;
-    autoLoaded.current = true;
-    sendMessage(TOPIC_PROMPTS.overview, true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 不再挂载即自动生成解读（历史回载/首屏都只显示盘面 + 空面板，由用户点维度触发）
 
-  // Inject palace analysis when palace selected
+  // Inject palace analysis when palace selected → 归入「专项」线程
   useEffect(() => {
     if (!selectedPalace || selectedPalace.branch === lastPalaceBranch.current) return;
     lastPalaceBranch.current = selectedPalace.branch;
@@ -238,17 +238,17 @@ ${selectedPalace.name}在命盘中的意义，以及这种星曜配置的整体�
 **【实际建议】**
 基于此宫的具体建议。`;
 
-    sendMessage(prompt, true);
+    setActiveTab(ADVISORY);
+    sendMessage(prompt, true, ADVISORY);
   }, [selectedPalace]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 注入四化飞化分析
+  // 注入四化飞化分析 → 归入「专项」线程
   useEffect(() => {
     if (!selectedSiHua) return;
     const key = `${selectedSiHua.starName}-${selectedSiHua.siHua}-${selectedSiHua.view}`;
     if (key === lastSiHuaKey.current) return;
     lastSiHuaKey.current = key;
 
-    // 找出该星所在宫位
     const palaceOfStar = chart.palaces.find(p =>
       p.stars.some(s => s.name === selectedSiHua.starName)
     );
@@ -272,10 +272,14 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 **【实际建议】**
 基于此四化的具体可操作建议。`;
 
-    sendMessage(prompt, true);
+    setActiveTab(ADVISORY);
+    sendMessage(prompt, true, ADVISORY);
   }, [selectedSiHua]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const streamResponse = async (apiMessages: { role: 'user' | 'assistant'; content: string }[]) => {
+  const streamResponse = async (
+    apiMessages: { role: 'user' | 'assistant'; content: string }[],
+    tabKey: string,
+  ) => {
     try {
       const res = await fetch('/api/interpret', {
         method: 'POST',
@@ -289,7 +293,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       const decoder = new TextDecoder();
       let assistantText = '';
 
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '' }] }));
 
       while (true) {
         const { done, value } = await reader.read();
@@ -302,101 +306,134 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
           try {
             const delta = JSON.parse(data).delta?.text ?? '';
             assistantText += delta;
-            setMessages(prev => {
-              const updated = [...prev];
-              updated[updated.length - 1] = { role: 'assistant', content: assistantText };
-              return updated;
+            setThreads(prev => {
+              const arr = [...(prev[tabKey] ?? [])];
+              arr[arr.length - 1] = { role: 'assistant', content: assistantText };
+              return { ...prev, [tabKey]: arr };
             });
           } catch { /* skip */ }
         }
       }
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: '解读失败，请稍后重试。' }]);
+      setThreads(prev => ({
+        ...prev,
+        [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '解读失败，请稍后重试。' }],
+      }));
     } finally {
       setLoading(false);
+      setLoadingTab(null);
       loadingRef.current = false;
       // 发送排队中的消息（用户在 loading 期间输入的问题）
       if (pendingRef.current) {
         const next = pendingRef.current;
-        pendingRef.current = '';
-        sendMessage(next);
+        pendingRef.current = null;
+        sendMessage(next.text, false, next.tab);
       }
     }
   };
 
-  const sendMessage = (text: string, hidden = false) => {
+  const sendMessage = (text: string, hidden = false, tabKey: string = activeTab) => {
     if (!text.trim()) return;
     // loading 期间不丢弃：排队，等当前流式结束后自动发送
     if (loadingRef.current) {
-      pendingRef.current = text;
+      pendingRef.current = { tab: tabKey, text };
       setInput('');
       return;
     }
     loadingRef.current = true;
     setLoading(true);
+    setLoadingTab(tabKey);
 
     const userMsg: Message = { role: 'user', content: text, hidden };
-    // Capture current messages synchronously via ref (avoids stale closure)
-    const apiMessages = [...messagesRef.current, userMsg].map(m => ({
+    // Capture current messages of this tab synchronously via ref (avoids stale closure)
+    const cur = threadsRef.current[tabKey] ?? [];
+    const apiMessages = [...cur, userMsg].map(m => ({
       role: m.role,
       content: m.content,
     }));
 
-    setMessages(prev => [...prev, userMsg]);
+    setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), userMsg] }));
     setInput('');
-    streamResponse(apiMessages);
+    streamResponse(apiMessages, tabKey);
   };
 
-  const handleTopicClick = (topicKey: string) => {
-    setActiveTopic(topicKey);
-    // 排队逻辑在 sendMessage 内统一处理
-    sendMessage(TOPIC_PROMPTS[topicKey], true);
+  // 点击维度标签：切换并显示该维度；若尚未生成则触发生成
+  const handleTabClick = (topicKey: string) => {
+    setActiveTab(topicKey);
+    if (topicKey === ADVISORY) return; // 专项标签只在有内容时出现，不主动生成
+    const has = (threads[topicKey]?.length ?? 0) > 0;
+    if (!has) sendMessage(TOPIC_PROMPTS[topicKey] ?? '', true, topicKey);
   };
 
   const handleSend = () => {
-    sendMessage(input);
+    sendMessage(input, false, activeTab);
   };
 
-  return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden card-glass">
+  // 标签集合：6 个维度常驻 + 专项（有内容或当前激活时显示）
+  const showAdvisory = activeTab === ADVISORY || (threads[ADVISORY]?.length ?? 0) > 0;
+  const tabs = [...TOPICS, ...(showAdvisory ? [{ key: ADVISORY, label: '专项' }] : [])];
+  const activeLabel = tabs.find(t => t.key === activeTab)?.label ?? '命理';
+  const thread = threads[activeTab] ?? [];
+  const isGenerating = loadingTab === activeTab && thread.length === 0;
 
-      {/* ── Topic buttons ── */}
-      <div className="flex-shrink-0 px-2 pt-2.5 pb-2" style={{ borderBottom: '1px solid var(--t-border)' }}>
-        <div className="grid grid-cols-6 gap-1">
-          {TOPICS.map(t => {
-            const isActive = activeTopic === t.key;
-            return (
-              <button
-                key={t.key}
-                onClick={() => handleTopicClick(t.key)}
-                disabled={loading}
-                className="py-1.5 text-[10px] font-medium rounded-lg transition-all duration-150 disabled:opacity-40"
-                style={{
-                  background: isActive ? 'rgba(212,168,67,0.12)' : 'transparent',
-                  border: `1px solid ${isActive ? 'rgba(212,168,67,0.3)' : 'var(--t-border)'}`,
-                  color: isActive ? 'var(--t-gold)' : 'var(--t-faint)',
-                }}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+  return (
+    <div
+      className="flex flex-col rounded-xl overflow-hidden card-glass"
+      style={{ maxHeight: 'calc(100vh - 170px)', minHeight: 360 }}
+    >
+
+      {/* ── 维度标签（切换独立面板） ── */}
+      <div className="flex-shrink-0 px-2 pt-2.5 pb-2 flex flex-wrap gap-1" style={{ borderBottom: '1px solid var(--t-border)' }}>
+        {tabs.map(t => {
+          const isActive = activeTab === t.key;
+          const isLoading = loadingTab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => handleTabClick(t.key)}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all duration-150"
+              style={{
+                background: isActive ? 'rgba(212,168,67,0.12)' : 'transparent',
+                border: `1px solid ${isActive ? 'rgba(212,168,67,0.3)' : 'var(--t-border)'}`,
+                color: isActive ? 'var(--t-gold)' : 'var(--t-faint)',
+              }}
+            >
+              {t.label}
+              {isLoading && (
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ background: 'var(--t-gold)', opacity: 0.7 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Messages ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+      {/* ── 当前维度线程（内部滚动，不撑长整页） ── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
 
-        {/* Loading state before first message */}
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="text-4xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.1 }}>✦</div>
-            <p className="text-[10px] animate-pulse" style={{ color: 'var(--t-faint)' }}>命格解读生成中…</p>
-          </div>
+        {/* 空 / 生成中 状态 */}
+        {thread.length === 0 && (
+          isGenerating ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="text-4xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.1 }}>✦</div>
+              <p className="text-[10px] animate-pulse" style={{ color: 'var(--t-faint)' }}>解读生成中…</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
+              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--t-faint)' }}>
+                {activeTab === ADVISORY
+                  ? '点击命盘上的宫位或四化徽章，\n专项解读会显示在这里。'
+                  : `选择上方维度标签，\n生成对应的${activeLabel}解读。`}
+              </p>
+            </div>
+          )
         )}
 
         <AnimatePresence initial={false}>
-          {messages.map((msg, i) => {
+          {thread.map((msg, i) => {
             if (msg.role === 'user' && msg.hidden) return null;
 
             if (msg.role === 'user') {
@@ -422,7 +459,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
             }
 
             // Assistant message
-            const isLastMsg = i === messages.length - 1;
+            const isLastMsg = i === thread.length - 1;
             return (
               <motion.div
                 key={i}
@@ -434,9 +471,9 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
                   style={{ color: 'var(--t-faint)' }}
                 >
                   <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
-                  命理解读
+                  {activeLabel}解读
                 </div>
-                <AiContent text={msg.content} streaming={loading && isLastMsg} />
+                <AiContent text={msg.content} streaming={loading && loadingTab === activeTab && isLastMsg} />
               </motion.div>
             );
           })}
@@ -451,7 +488,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder={loading ? '正在解读中，输入后自动排队…' : '继续追问，如：今年适合换工作吗？'}
+            placeholder={loading ? '正在解读中，输入后自动排队…' : `向「${activeLabel}」继续追问…`}
             className="flex-1 rounded-lg px-3 py-2 text-[11px] focus:outline-none transition-colors"
             style={{
               background: 'var(--t-card)',
