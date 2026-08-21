@@ -16,30 +16,19 @@ import 'react-iztro/lib/Iztrolabe/Iztrolabe.css';
 import 'react-iztro/lib/Izpalace/Izpalace.css';
 import 'react-iztro/lib/IzpalaceCenter/IzpalaceCenter.css';
 import 'react-iztro/lib/theme/default.css';
+import DaXianYearNav from '@/components/DaXianYearNav';
+import SanFangOverlay from '@/components/SanFangOverlay';
 
 const BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 
 /**
  * 命盘页 —— 升级版（组装孤儿功能）
  *
- * 盘面：react-iztro 星盘组件（Iztrolabe，金主题 theme-gold，自包含排盘渲染 + 中宫运限控制）
+ * 盘面：react-iztro 星盘组件（Iztrolabe，紫主题 theme-purple，自包含排盘渲染 + 中宫运限控制）
  * 解读：InsightPanel（AI 流式解读，基于 generateChart 的倪师数据层）
- * 说明：两套排盘同源（iztro），口径一致（P0 已验证）；generateChart 仅供
- *       InsightPanel 组织 AI 上下文，Iztrolabe 内部自行排盘渲染。
  *
  * 运限：顶部 TimeNav（本命/大限/流年切换 + 流年年份 +/-），
- *       选择结果通过 horoscopeDate 驱动 Iztrolabe 的运限日期；
- *       Iztrolabe 中宫按钮仍可在此基础上微调流月/流日/流时。
- *
- * 宫位/四化联动：Iztrolabe 未暴露宫位与四化点击回调，这里在容器上用事件
- *       委托捕获 .iztro-palace / .iztro-star-mutagen 的点击，按宫名/星名
- *       匹配 chart.palaces 后传给 InsightPanel，恢复「点击宫位 → AI 解读
- *       该宫」「点击四化徽章 → 飞化分析」的原交互。
- *
- * 孤儿功能组装（上游开源时被裁剪但组件仍在仓库）：
- *   - PatternsCard    格局识别卡片（detectPatterns，严格古书条件）
- *   - StarDetailPanel 星曜详情（点击盘面星曜弹出）
- *   - useHistory      命盘历史（localStorage 最多 10 条，表单页回载）
+ *       选择结果通过 horoscopeDate 驱动 Iztrolabe 的运限日期。
  */
 export default function ChartPage() {
   const [chart, setChart] = useState<ZiweiChart | null>(null);
@@ -52,6 +41,8 @@ export default function ChartPage() {
     view: TimeView;
   } | null>(null);
   const [selectedStar, setSelectedStar] = useState<Star | null>(null);
+  // 用户临时选定的大限（点底栏大限卡片时更新；-1 表示跟随 currentDaXianIndex）
+  const [activeDaXianIndex, setActiveDaXianIndex] = useState<number>(-1);
   const [formKey, setFormKey] = useState(0);
   const [lang, setLang] = useState<ChartLang>(() => getStoredLang());
   // 解读 ↔ 历史绑定：当前命盘对应的历史条目 id 及其已存解读（回载时注入）
@@ -60,6 +51,7 @@ export default function ChartPage() {
   const lastCompleteFormRef = useRef<BirthFormState | null>(null); // 提交时用于匹配历史条目
   const lastSavedInsightsRef = useRef(''); // 防重复写回：与上次已存内容相同则跳过
   const { history, save: saveHistory, remove: removeHistory, updateInsights } = useHistory();
+  const shellRef = useRef<HTMLDivElement>(null); // 盘面容器（三方四正 overlay 锚点）
 
   const handleLangChange = (v: ChartLang) => {
     setLang(v);
@@ -73,14 +65,15 @@ export default function ChartPage() {
       return new Date(liunianYear, 6, 15);
     }
     if (view === 'daxian') {
-      const dx = chart.daXians[chart.currentDaXianIndex];
+      const dxIndex = activeDaXianIndex >= 0 ? activeDaXianIndex : chart.currentDaXianIndex;
+      const dx = chart.daXians[dxIndex];
       if (dx) {
         // 虚岁 startAge 对应的公历年 = 出生年 + startAge - 1
         return new Date(chart.birthInfo.year + dx.startAge - 1, 6, 15);
       }
     }
     return undefined; // mingpan：Iztrolabe 默认当前时间
-  }, [view, liunianYear, chart]);
+  }, [view, liunianYear, activeDaXianIndex, chart]);
 
   // 表单提交 → 排盘（同时写入/更新历史：只有点起盘才产生历史，填表过程不落库）
   const handleSubmit = (info: BirthInfo) => {
@@ -90,6 +83,7 @@ export default function ChartPage() {
 
     setChart(generateChart(info));
     setView('mingpan');
+    setActiveDaXianIndex(-1);
     setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
@@ -238,6 +232,7 @@ export default function ChartPage() {
   const resetChart = () => {
     setChart(null);
     setView('mingpan');
+    setActiveDaXianIndex(-1);
     setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
@@ -245,7 +240,7 @@ export default function ChartPage() {
     setInitialThreads(null);
   };
 
-  // ── 已起盘：react-iztro 星盘 + 格局卡片 + AI 解读 ──
+  // ── 已起盘：react-iztro 星盘（紫主题）+ 格局卡片 + AI 解读 ──
   return (
     <main className="chart-stage-bg">
       <div className="chart-main-inner">
@@ -276,17 +271,42 @@ export default function ChartPage() {
         />
 
         <div className="chart-grid">
-          {/* 盘面：Iztrolabe 金主题，白卡框住 */}
-          <div className="astrolabe-shell iztro-theme-host theme-gold" onClick={handleAstrolabeClick}>
-            <Iztrolabe
-              birthday={`${year}-${month}-${day}`}
-              birthTime={hour}
-              birthdayType="solar"
-              gender={gender}
-              lang={lang}
-              horoscopeDate={horoscopeDate}
-              // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
-              options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
+          {/* 盘面：react-iztro Iztrolabe 紫主题 */}
+          <div>
+            <div
+              className="astrolabe-shell iztro-theme-host theme-purple"
+              onClick={handleAstrolabeClick}
+              ref={shellRef}
+              style={{ position: 'relative' }}
+            >
+              <Iztrolabe
+                birthday={`${year}-${month}-${day}`}
+                birthTime={hour}
+                birthdayType="solar"
+                gender={gender}
+                lang={lang}
+                horoscopeDate={horoscopeDate}
+                // 年柱按立春、月柱按节气（正统八字口径）；iztro 默认 normal 按春节/初一，节气边界日期会错位
+                options={{ yearDivide: 'exact', horoscopeDivide: 'exact' }}
+              />
+              {/* 三方四正连线 + 焦点宫高亮（随大限/流年切换） */}
+              <SanFangOverlay
+                shellRef={shellRef}
+                chart={chart}
+                view={view}
+                liunianYear={liunianYear}
+                activeDaXianIndex={activeDaXianIndex}
+              />
+            </div>
+            {/* 大限 + 流年 快捷切换列表 */}
+            <DaXianYearNav
+              chart={chart}
+              view={view}
+              liunianYear={liunianYear}
+              activeDaXianIndex={activeDaXianIndex >= 0 ? activeDaXianIndex : chart.currentDaXianIndex}
+              onViewChange={setView}
+              onYearChange={setLiunianYear}
+              onDaXianChange={setActiveDaXianIndex}
             />
           </div>
 

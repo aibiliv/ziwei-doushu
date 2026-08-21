@@ -56,12 +56,14 @@ export default function ChartBoard({ chart, onStarSelect, onPalaceSelect, onSiHu
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [timeView, setTimeView] = useState<TimeView>('mingpan');
   const [liunianYear, setLiunianYear] = useState<number>(new Date().getFullYear());
+  // 用户临时选定的大限（默认 = 当前年龄所在大限；点底栏大限卡片可临时跳到该大限）
+  const [activeDaXianIndex, setActiveDaXianIndex] = useState<number>(chart.currentDaXianIndex);
 
   const palaceMap: Record<number, Palace> = {};
   chart.palaces.forEach(p => { palaceMap[p.branch] = p; });
 
   // 计算当前叠加四化数据（大限或流年）
-  const currentDx = chart.daXians[chart.currentDaXianIndex];
+  const currentDx = chart.daXians[activeDaXianIndex];
   const overlayData: Record<string, string> = (() => {
     if (timeView === 'daxian' && currentDx) {
       const dxPalace = chart.palaces.find(p => p.branch === currentDx.palaceBranch);
@@ -166,8 +168,8 @@ export default function ChartBoard({ chart, onStarSelect, onPalaceSelect, onSiHu
             </div>
           </div>
 
-          {chart.currentDaXianIndex >= 0 && (() => {
-            const dx = chart.daXians[chart.currentDaXianIndex];
+          {activeDaXianIndex >= 0 && (() => {
+            const dx = chart.daXians[activeDaXianIndex];
             return (
               <div className="border border-purple-500/30 rounded-lg px-3 py-1.5 text-center"
                 style={{ background: 'rgba(147,51,234,0.06)' }}>
@@ -260,6 +262,67 @@ export default function ChartBoard({ chart, onStarSelect, onPalaceSelect, onSiHu
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── 快捷大限切换列表（对齐 Metis 紫微官方底栏） ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="mt-3 grid gap-1"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))' }}
+      >
+        {chart.daXians.map((dx, idx) => {
+          const isActive = idx === activeDaXianIndex;
+          const isNatural = idx === chart.currentDaXianIndex;
+          return (
+            <button
+              key={idx}
+              onClick={() => {
+                setActiveDaXianIndex(idx);
+                setTimeView('daxian');
+              }}
+              className="rounded-md px-2 py-2 text-center transition-all hover:scale-[1.03]"
+              style={{
+                background: isActive
+                  ? 'rgba(212,168,67,0.18)'  // 当前临时选中 → 金色高亮
+                  : isNatural
+                    ? 'rgba(147,51,234,0.10)'  // 当前年龄所在大限 → 紫底
+                    : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${
+                  isActive
+                    ? 'rgba(212,168,67,0.55)'
+                    : isNatural
+                      ? 'rgba(147,51,234,0.4)'
+                      : 'var(--t-border)'
+                }`,
+              }}
+              title={`${dx.startAge}-${dx.endAge}岁 · ${dx.palaceName} 大限`}
+            >
+              <div
+                className="text-[10px] font-medium tabular-nums leading-tight"
+                style={{
+                  color: isActive
+                    ? 'var(--t-gold)'
+                    : isNatural
+                      ? 'rgb(167,139,250)'
+                      : 'var(--t-text2)',
+                }}
+              >
+                {dx.startAge}–{dx.endAge}岁
+              </div>
+              <div
+                className="text-[9px] mt-0.5 leading-tight"
+                style={{
+                  color: isActive ? 'var(--t-gold)' : 'var(--t-text2)',
+                  opacity: isActive ? 0.95 : 0.7,
+                }}
+              >
+                {dx.palaceName}
+              </div>
+            </button>
+          );
+        })}
+      </motion.div>
 
       {/* 图例 */}
       <motion.div

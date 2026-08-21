@@ -1,6 +1,6 @@
 'use client';
 import { motion } from 'framer-motion';
-import { STEMS, SI_HUA_TABLE } from '@/lib/ziwei/constants';
+import { STEMS, BRANCHES, SI_HUA_TABLE } from '@/lib/ziwei/constants';
 import type { ZiweiChart } from '@/lib/ziwei/types';
 
 export type TimeView = 'mingpan' | 'daxian' | 'liunian';
@@ -16,6 +16,16 @@ interface TimeNavProps {
 /** 由年份计算天干索引 (0-9) */
 export function getYearStemIndex(year: number): number {
   return ((year - 4) % 10 + 10) % 10;
+}
+
+/** 由年份计算地支索引 (0-11) */
+export function getYearZhiIndex(year: number): number {
+  return ((year - 4) % 12 + 12) % 12;
+}
+
+/** 由年份得到干支 (e.g. "乙亥") */
+export function getYearGanZhi(year: number): string {
+  return STEMS[getYearStemIndex(year)] + BRANCHES[getYearZhiIndex(year)];
 }
 
 /** 根据天干索引返回四化映射：starName → SiHua */

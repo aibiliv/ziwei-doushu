@@ -26,6 +26,17 @@ const SIHUA_STYLES: Record<string, string> = {
   '忌': 'text-red-400 bg-red-500/10 border-red-500/30',
 };
 
+// 六吉星（辅星：紫微斗数传统"辅星"专指文昌/文曲/左辅/右弼/天魁/天钺）
+// 数据层面 iztro 把它们归为 lucky，但视觉上要按"辅星"分类显示紫色
+const HELPER_STARS = new Set(['文昌', '文曲', '左辅', '右弼', '天魁', '天钺']);
+
+/** 主星红 / 辅星紫 / 杂星蓝（对齐 Metis 紫微官方配色） */
+function starColorClass(star: Star): string {
+  if (star.type === 'major') return 'text-rose-500';           // 主星 → 红
+  if (star.type === 'minor' || HELPER_STARS.has(star.name)) return 'text-violet-400';  // 辅星 → 紫
+  return 'text-blue-500';                                       // 杂星(lucky/sha 其他) → 蓝
+}
+
 const SiHuaBadge = ({
   siHua,
   overlay,
@@ -61,7 +72,8 @@ export default function PalaceCell({
   const ganzhi = `${STEMS[stem]}${BRANCHES[branch]}`;
 
   const majorStars = stars.filter(s => s.type === 'major');
-  const luckyStars = stars.filter(s => s.type === 'lucky');
+  const helperStars = stars.filter(s => s.type === 'minor' || HELPER_STARS.has(s.name));
+  const luckyStars = stars.filter(s => s.type === 'lucky' && !HELPER_STARS.has(s.name));
   const shaStars = stars.filter(s => s.type === 'sha');
 
   return (
@@ -138,7 +150,8 @@ export default function PalaceCell({
             >
               <span className={clsx(
                 'text-[13px] leading-tight font-bold tracking-tight cursor-pointer hover:brightness-125 transition-all',
-                star.brightness === 'bright' ? 'text-amber-300' : star.brightness === 'dim' ? 'text-amber-700/80' : 'text-amber-500',
+                // 主星红 / 辅星紫 / 杂星蓝（对齐 Metis 紫微官方配色）
+                starColorClass(star),
               )}>
                 {star.name}
               </span>
@@ -159,13 +172,13 @@ export default function PalaceCell({
         })}
       </div>
 
-      {/* 吉星 */}
-      {luckyStars.length > 0 && (
+      {/* 辅星（六吉星：文昌/文曲/左辅/右弼/天魁/天钺，以及其他 minor 类型） */}
+      {helperStars.length > 0 && (
         <div className="flex flex-wrap gap-x-1 mt-0.5">
-          {luckyStars.map(s => {
+          {helperStars.map(s => {
             const overlaySiHua = overlayStarSiHua?.[s.name];
             return (
-              <span key={s.name} className="inline-flex items-center text-[9px] text-sky-500/70 leading-tight">
+              <span key={s.name} className="inline-flex items-center text-[9px] text-violet-400 leading-tight">
                 {s.name}
                 {s.siHua && <SiHuaBadge siHua={s.siHua} />}
                 {overlaySiHua && (
@@ -185,11 +198,37 @@ export default function PalaceCell({
         </div>
       )}
 
-      {/* 煞星 */}
+      {/* 吉星（除六吉星外：禄存/天马/红鸾/天喜 等） */}
+      {luckyStars.length > 0 && (
+        <div className="flex flex-wrap gap-x-1 mt-0.5">
+          {luckyStars.map(s => {
+            const overlaySiHua = overlayStarSiHua?.[s.name];
+            return (
+              <span key={s.name} className="inline-flex items-center text-[9px] text-blue-500/70 leading-tight">
+                {s.name}
+                {s.siHua && <SiHuaBadge siHua={s.siHua} />}
+                {overlaySiHua && (
+                  <SiHuaBadge
+                    siHua={overlaySiHua}
+                    overlay
+                    label={overlayLabel}
+                    onClick={e => {
+                      e.stopPropagation();
+                      onSiHuaClick?.(s.name, overlaySiHua);
+                    }}
+                  />
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 煞星（杂星：擎羊/陀罗/火星/铃星/地空/地劫 等） */}
       {shaStars.length > 0 && (
         <div className="flex flex-wrap gap-x-1">
           {shaStars.map(s => (
-            <span key={s.name} className="text-[9px] text-red-500/60 leading-tight">
+            <span key={s.name} className="text-[9px] text-blue-500/60 leading-tight">
               {s.name}{s.siHua && <SiHuaBadge siHua={s.siHua} />}
             </span>
           ))}

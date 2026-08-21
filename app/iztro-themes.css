@@ -2,6 +2,13 @@
  * 仅覆盖 CSS 变量与少量类选择器，不动组件源码
  */
 
+/* 隐藏 react-iztro 自带的「三方四正」连线 canvas（默认以命宫绘制、粉/蓝色实线）。
+ * 三方四正改由自建 components/SanFangOverlay.tsx 接管（大限/流年视图金色虚线，本命视图不显示）。
+ * 仅作用于 /chart 的盘面容器（.astrolabe-shell），不影响 /chart-compare 等其它页面。 */
+.astrolabe-shell #palace-line {
+  display: none !important;
+}
+
 /* ── 倪师金：主星金棕 · 边框暖金 · 悬停宫位浅金 ── */
 .iztro-theme-host.theme-gold .iztro-astrolabe-theme-default {
   --iztro-color-major: #8B5E34;
@@ -47,4 +54,29 @@
 }
 .iztro-theme-host.theme-ocean .iztro-palace.focused-palace {
   background-color: rgba(31, 78, 121, 0.12);
+}
+
+/* ── 紫：主星深紫 · 紫调现代感 ── */
+.iztro-theme-host.theme-purple .iztro-astrolabe-theme-default {
+  --iztro-color-major: #531DAB;
+  --iztro-color-focus: #2C1248;
+  --iztro-color-quan: #6E48C9;
+  --iztro-color-tough: #6B3A5C;
+  --iztro-color-awesome: #C0388A;
+  --iztro-color-active: #8B5CF6;
+  --iztro-color-happy: #D946EF;
+  --iztro-color-nice: #7C3AED;
+  --iztro-color-decorator-1: #A78BFA;
+  --iztro-color-decorator-2: #C084FC;
+  --iztro-color-text: #6B5B95;
+  --iztro-color-border: #531DAB26;
+}
+.iztro-theme-host.theme-purple .iztro-palace {
+  border-color: #531DAB33;
+}
+.iztro-theme-host.theme-purple .iztro-palace.focused-palace {
+  background-color: rgba(83, 29, 171, 0.14);
+}
+.iztro-theme-host.theme-purple .iztro-palace.opposite-palace {
+  background-color: rgba(83, 29, 171, 0.07);
 }
