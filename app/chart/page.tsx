@@ -82,20 +82,21 @@ export default function ChartPage() {
     return undefined; // mingpan：Iztrolabe 默认当前时间
   }, [view, liunianYear, chart]);
 
-  // 表单提交 → 排盘（同时绑定历史条目：解读写回目标）
+  // 表单提交 → 排盘（同时写入/更新历史：只有点起盘才产生历史，填表过程不落库）
   const handleSubmit = (info: BirthInfo) => {
+    // 用最近一次完整表单保存历史（同出生信息则复用 id/insights 并置顶，不同则新建）
+    const form = lastCompleteFormRef.current;
+    if (form) saveHistory(form);
+
     setChart(generateChart(info));
     setView('mingpan');
     setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
 
-    // 用最近一次完整表单匹配历史条目（真太阳时校正后 hour 可能变，须用原始 clockHour/Minute）。
+    // 匹配历史条目作为解读写回目标（真太阳时校正后 hour 可能变，须用原始 clockHour/Minute）。
     // 从 localStorage 读：saveHistory 同步写 localStorage、异步 setState，这里必须用最新值兜底
-    const form = lastCompleteFormRef.current;
-    const matched = form
-      ? matchHistoryEntry(readStoredHistory(), form)
-      : undefined;
+    const matched = form ? matchHistoryEntry(readStoredHistory(), form) : undefined;
     setActiveHistoryId(matched?.id ?? null);
     setInitialThreads(matched?.insights ?? null);
     lastSavedInsightsRef.current = JSON.stringify(matched?.insights ?? {});
@@ -131,12 +132,11 @@ export default function ChartPage() {
           <BirthForm
             key={formKey}
             onSubmit={handleSubmit}
-            // 只在关键字段齐全时才写入历史（BirthForm 每次表单变化都会触发 onFormSave，
-            // 不加这道闸会把残缺表单存进 localStorage，回载时 bySolar 收到非法日期）
+            // onFormSave 只记录最新完整表单（提交时用于保存历史/匹配解读写回目标），
+            // 不再实时写历史——历史只在点击起盘（onSubmit）时更新
             onFormSave={(form) => {
               if (form.year && form.month && form.day && form.gender) {
-                saveHistory(form);
-                lastCompleteFormRef.current = form; // 记录最新完整表单，提交时用于匹配历史
+                lastCompleteFormRef.current = form;
               }
             }}
           />
