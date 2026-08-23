@@ -847,7 +847,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
   return (
     <div
       className="flex flex-col rounded-xl overflow-hidden card-glass"
-      style={{ maxHeight: 'calc(100vh - 170px)', minHeight: 360 }}
+      style={{ maxHeight: 'calc(100vh + 100px)', minHeight: 360 }}
     >
 
       {/* ── 5 维雷达图（命盘分析顶部固定显示） ── */}
