@@ -40,7 +40,9 @@ export default function DaXianYearNav({
     view === 'daxian' && activeDaXianIndex >= 0
       ? activeDaXianIndex
       : decadeIndexOfYear(chart, liunianYear);
-  const activeDx = chart.daXians[activeDecadeIdx];
+  // 防止 -1 或越界导致 activeDx 为 undefined
+  const clampedIdx = Math.max(0, Math.min(activeDecadeIdx, chart.daXians.length - 1));
+  const activeDx = chart.daXians[clampedIdx];
   // 流年：锚定大限的 10 个公历年（虚岁 startAge 起算）
   const decadeStartYear = chart.birthInfo.year + activeDx.startAge - 1;
   const yearCards = Array.from({ length: 10 }, (_, i) => decadeStartYear + i);
