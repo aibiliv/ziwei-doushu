@@ -271,10 +271,10 @@ export default function ChartPage() {
         />
 
         <div className="chart-grid">
-          {/* 盘面：react-iztro Iztrolabe 紫主题 */}
+          {/* 盘面：react-iztro Iztrolabe 官方白底卡片主题 */}
           <div>
             <div
-              className="astrolabe-shell iztro-theme-host theme-purple"
+              className="astrolabe-shell iztro-theme-host theme-metis"
               onClick={handleAstrolabeClick}
               ref={shellRef}
               style={{ position: 'relative' }}

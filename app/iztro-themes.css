@@ -80,3 +80,60 @@
 .iztro-theme-host.theme-purple .iztro-palace.opposite-palace {
   background-color: rgba(83, 29, 171, 0.07);
 }
+
+/* ── Metis 官方白底卡片风（外观层 CSS 穿透：仅覆盖变量 + 宫格卡片化，不动源码）── */
+.iztro-theme-host.theme-metis .iztro-astrolabe-theme-default {
+  --iztro-star-font-size-big: 13px;
+  --iztro-star-font-size-small: 12px;
+  --iztro-color-major: #C62828;      /* 主星 红（官方主星红） */
+  --iztro-color-focus: #1F2937;       /* 四化-权焦点 深灰黑 */
+  --iztro-color-quan: #2563EB;        /* 权 蓝 */
+  --iztro-color-tough: #92600A;       /* 庙旺 tough 棕 */
+  --iztro-color-awesome: #EA580C;     /* 化禄 橙 */
+  --iztro-color-active: #2563EB;      /* active 蓝（禄存等） */
+  --iztro-color-happy: #DB2777;       /* 桃花星 玫红 */
+  --iztro-color-nice: #6D28D9;        /* 辅星/天干地支 紫 */
+  --iztro-color-decorator-1: #9CA3AF; /* 长生12等 灰 */
+  --iztro-color-decorator-2: #6B7280; /* 将前12等 灰 */
+  --iztro-color-text: #6B7280;        /* 普通文字 灰 */
+  --iztro-color-border: #E5E7EB;      /* 浅灰边框 */
+  --iztro-color-decadal: #16A34A;     /* 大限 绿（官方大限绿） */
+  --iztro-color-yearly: #2563EB;      /* 流年 蓝（官方流年蓝） */
+  --iztro-color-monthly: #6D28D9;
+  --iztro-color-daily: #9CA3AF;
+  --iztro-color-hourly: #6B7280;
+}
+
+/* 宫格卡片化：白底、圆角、浅边框、轻阴影 */
+.iztro-theme-host.theme-metis .iztro-palace {
+  background-color: #FFFFFF;
+  border: 1px solid var(--iztro-color-border);
+  border-radius: 8px;
+  padding: 6px 5px;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+}
+.iztro-theme-host.theme-metis .iztro-astrolabe {
+  grid-gap: 8px;
+}
+.iztro-theme-host.theme-metis .iztro-palace.focused-palace {
+  background-color: #F5F3FF;
+}
+.iztro-theme-host.theme-metis .iztro-palace.opposite-palace {
+  background-color: #F9FAFB;
+}
+.iztro-theme-host.theme-metis .iztro-palace.surrounded-palace {
+  background-color: #F9FAFB;
+}
+/* 宫名用深灰（官方黑），保留 bold */
+.iztro-theme-host.theme-metis .iztro-palace-name {
+  color: #1F2937;
+}
+/* fate 小标签默认浅灰透明，active 时才上大限绿/流年蓝 */
+.iztro-theme-host.theme-metis .iztro-palace-fate span {
+  background-color: transparent;
+  color: var(--iztro-color-text);
+}
+/* 命宫 ☯ 标记底用深紫，区别于主星红 */
+.iztro-theme-host.theme-metis .iztro-palace-name .iztro-palace-name-taichi {
+  background-color: #6D28D9;
+}
