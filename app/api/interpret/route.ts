@@ -1,111 +1,29 @@
 import { BRANCHES } from '@/lib/ziwei/constants';
-import { getLiuNianSiHua } from '@/lib/ziwei/sihua';
 import type { ZiweiChart } from '@/lib/ziwei/types';
-import { getProviders, streamChatCompletion } from '@/lib/llm';
+import { getProviders, streamChatCompletion, type ProviderConfig } from '@/lib/llm';
+import { getPlanState, consumeDeep } from '@/lib/plan';
+import { buildSystemPrompt, buildChartContext } from '@/lib/prompt';
+import { SSE_HEADERS, buildTransformStream } from '@/lib/sse';
 
 /**
  * POST /api/interpret — AI 命盘解读（SSE 流式）
  *
- * LLM 接入：OpenAI 兼容 Provider 层（lib/llm.ts）
+ * 收费分层：请求体携带 plan（free=agnes 免费 / deep=iztro 付费深度）
+ *   - free  → 仅用非 iztro 的 Provider（agnes/deepseek），不限量
+ *   - deep  → 仅用 iztro；需经 lib/plan.ts 配额闸门（getPlanState + consumeDeep）
+ *            未订阅/额度耗尽返回 402 { upgrade:true } → 前端弹升级
  *   - 换模型/加模型 = 改 .env.local 的 AI_PROVIDER 与对应 KEY，零代码改动
- *   - 支持按序回退：AI_PROVIDER=agnes,deepseek → agnes 失败自动切 deepseek
- *   - 上游 OpenAI SSE → 转换为前端 InsightPanel 协议：
- *     data: {"delta":{"text":"..."}}\n\n ... data: [DONE]\n\n
+ *
+ * iztro 经 lib/iztro.ts 接入：OpenAI 兼容 SSE，自动 language=zh；
+ *   其 system 角色提示词【生效】（天纪体系由此注入），但需 buildChartContext 携带阳历生日
+ * 上游 OpenAI SSE → 转换为前端 InsightPanel 协议：
+ *   data: {"delta":{"text":"..."}}\n\n ... data: [DONE]\n\n
  * 降级：未配置任何 API Key 时返回 mock 模板解读（便于开发调试）。
  */
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
-}
-
-// ─── 系统提示（倪海厦《天纪》南派三合派立场） ───
-// 动态注入当前日期：模型训练数据截止 2025，不知道"今年"是 2026，必须显式告知
-function buildSystemPrompt(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
-  return `你是资深紫微斗数命理师，精通倪海厦《天纪》体系（南派三合派）。
-
-【当前时间】今天是 ${year}年${month}月${day}日。用户问题中的"今年""今年运势"均指 ${year} 年，请以 ${year} 年的流年为基准解读，不要使用更早的年份。
-
-解读原则：
-1. 以本命盘数据为准，结合十二宫星曜、亮度（庙旺利陷）、四化（禄权科忌）、三方四正、当前大限、当前流年进行解读。
-2. 四化永远固定不动（倪师立场），不使用宫干自化、来因宫等飞星派工具。
-3. 输出使用【小标题】分段（如【命格定性】【主星解读】【三方四正】【当前大限】【实际建议】），每段 2-4 句话，语气专业、通俗、有条理。
-4. 定位为传统文化与自我认知参考：不承诺具体预测结果，不涉及封建迷信或恐吓性表述，涉及健康问题建议就医。
-5. 引用倪师观点或古籍（《紫微斗数全集》《骨髓赋》《天纪》讲义）时注明出处。`;
-}
-
-// ─── chart → 结构化上下文（喂给 LLM） ───
-function buildChartContext(chart: ZiweiChart): string {
-  const g = chart.birthInfo.gender === 'male' ? '男' : '女';
-  const lines: string[] = [];
-  const now = new Date();
-  const year = now.getFullYear();
-  const ln = getLiuNianSiHua(year);
-  lines.push(`命主：${g}，${chart.wuxingJuName}，命宫${BRANCHES[chart.mingGongBranch]}，身宫${BRANCHES[chart.shenGongBranch]}，紫微在${BRANCHES[chart.ziweiPos]}，农历 ${chart.lunarInfo.lunarYear}年${chart.lunarInfo.lunarMonth}月${chart.lunarInfo.lunarDay}日`);
-  lines.push(`当前流年：${year}年（${ln.stemName}年），流年四化：${ln.transforms.禄}化禄、${ln.transforms.权}化权、${ln.transforms.科}化科、${ln.transforms.忌}化忌`);
-
-  for (const p of chart.palaces) {
-    const stars = p.stars.map(s => {
-      let t = s.name;
-      if (s.type === 'major' && s.brightness === 'bright') t += '(庙旺)';
-      else if (s.type === 'major' && s.brightness === 'dim') t += '(落陷)';
-      if (s.siHua) t += `化${s.siHua}`;
-      return t;
-    }).join('、') || '空宫';
-    const daXian = p.daXianAge ? ` 大限${p.daXianAge[0]}-${p.daXianAge[1]}岁` : '';
-    const mark = p.isMingGong ? ' [命宫]' : p.isShenGong ? ' [身宫]' : '';
-    lines.push(`${p.name}${mark}(${BRANCHES[p.branch]}): ${stars}${daXian}`);
-  }
-
-  const dx = chart.daXians[chart.currentDaXianIndex];
-  if (dx) lines.push(`当前大限：${dx.palaceName}，${dx.startAge}-${dx.endAge}岁`);
-
-  return lines.join('\n');
-}
-
-// ─── Agnes 调用（SSE 流式 + 协议转换） ───
-function buildTransformStream(upstreamBody: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-  const reader = upstreamBody.getReader();
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-
-  return new ReadableStream({
-    async start(controller) {
-      let buf = '';
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() ?? '';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            const data = trimmed.slice(5).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const json = JSON.parse(data);
-              const content: string | undefined = json.choices?.[0]?.delta?.content;
-              if (content) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: { text: content } })}\n\n`));
-              }
-            } catch { /* 忽略无法解析的行 */ }
-          }
-        }
-      } finally {
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      }
-    },
-    cancel() {
-      reader.cancel().catch(() => {});
-    },
-  });
 }
 
 // ─── Mock 降级（无 key 时使用，结构参考 buildChartContext） ───
@@ -148,7 +66,8 @@ function mockSseResponse(text: string): Response {
   const stream = new ReadableStream({
     async start(controller) {
       for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: { text: chunk } })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: { text: chunk } })}
+\n`));
         await new Promise(r => setTimeout(r, 25));
       }
       controller.enqueue(encoder.encode('data: [DONE]\n\n'));
@@ -158,16 +77,13 @@ function mockSseResponse(text: string): Response {
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
-const SSE_HEADERS = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache, no-transform',
-  Connection: 'keep-alive',
-};
-
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const chart = body?.chart as ZiweiChart | undefined;
   const messages = (body?.messages ?? []) as ChatMessage[];
+  // 分层：free = agnes（免费），deep = iztro（付费深度解读）
+  const plan = body?.plan === 'deep' ? 'deep' : 'free';
+  const uid = (body?.uid as string | undefined) ?? 'anonymous';
 
   if (!chart) {
     return new Response(JSON.stringify({ error: '缺少 chart 数据' }), { status: 400 });
@@ -186,8 +102,41 @@ export async function POST(req: Request) {
     return mockSseResponse(buildMockReply(chart, messages));
   }
 
-  // 按 AI_PROVIDER 顺序尝试，失败自动回退下一个
-  for (const provider of providers) {
+  // 按 plan 选 provider：free 排除 iztro，deep 仅用 iztro
+  let selected: ProviderConfig[];
+  if (plan === 'deep') {
+    const st = await getPlanState(uid);
+    if (!st.deepAllowed) {
+      return new Response(
+        JSON.stringify({
+          error: 'DEEP_NOT_ALLOWED',
+          upgrade: true,
+          tier: st.tier,
+          remaining: st.deepRemaining,
+        }),
+        { status: 402, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    await consumeDeep(uid);
+    selected = providers.filter(p => p.name === 'iztro');
+    if (selected.length === 0) {
+      return new Response(
+        JSON.stringify({ error: '未配置 iztro（付费深度解读）Provider，请检查 IZTRO_API_KEY' }),
+        { status: 502 },
+      );
+    }
+  } else {
+    selected = providers.filter(p => p.name !== 'iztro');
+    if (selected.length === 0) {
+      return new Response(
+        JSON.stringify({ error: '未配置免费 Provider（agnes/deepseek），请检查 AI_PROVIDER' }),
+        { status: 502 },
+      );
+    }
+  }
+
+  // 按选定顺序尝试，失败自动回退下一个
+  for (const provider of selected) {
     const upstream = await streamChatCompletion(provider, llmMessages);
     if (upstream && upstream.body) {
       return new Response(buildTransformStream(upstream.body), { headers: SSE_HEADERS });

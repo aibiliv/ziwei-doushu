@@ -9,7 +9,11 @@ import { computeRadar } from '@/lib/ziwei/radar';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  hidden?: boolean; // don't show user bubble for auto/topic messages
+  hidden?: boolean;
+}
+
+interface ChatMessage extends Message {
+  // AI 对话栏目使用，不隐藏任何消息
 }
 
 interface SelectedSiHua {
@@ -22,31 +26,29 @@ interface InsightPanelProps {
   chart: ZiweiChart;
   selectedPalace?: Palace | null;
   selectedSiHua?: SelectedSiHua | null;
-  /** 历史回载时注入已保存的解读线程（挂载时初始化，仅生效一次） */
   initialThreads?: Record<string, Message[]>;
-  /** 线程变化上报（防抖后调用，供父级持久化到历史） */
   onThreadsChange?: (threads: Record<string, Message[]>) => void;
 }
 
-/** 专项解读（宫位 / 四化飞化）独立线程，不与 13 个维度混淆 */
+/** 专项解读（宫位 / 四化飞化）在命盘分析栏目内 */
 const ADVISORY = 'advisory';
 
-/** 13 个主题标签（对齐 Metis 紫微官方：命格总览 + 12 生活主题） */
+/** 13 个主题标签：前 6 个免费，后 7 个需专业版 */
 const TOPICS = [
-  { key: 'overview',         label: '命格总览',  locked: false },
-  { key: 'wealth',           label: '财运',      locked: false },
-  { key: 'career',           label: '事业',      locked: false },
-  { key: 'love',             label: '感情',      locked: false },
-  { key: 'personality',      label: '性格',      locked: false },
-  { key: 'health',           label: '健康',      locked: false },
-  // 7 个 LOCKED（专业版才解锁，免费版不可点）
-  { key: 'siblings',         label: '兄弟合伙',  locked: true },
-  { key: 'children',         label: '子女',      locked: true },
-  { key: 'migration',        label: '迁移外出',  locked: true },
-  { key: 'interpersonal',    label: '人际贵人',  locked: true },
-  { key: 'property',         label: '田宅',      locked: true },
-  { key: 'mentality',        label: '福德',      locked: true },
-  { key: 'parents',          label: '父母长辈',  locked: true },
+  { key: 'overview',      label: '命格总览',  locked: false },
+  { key: 'wealth',        label: '财运',      locked: false },
+  { key: 'career',        label: '事业',      locked: false },
+  { key: 'love',          label: '感情',      locked: false },
+  { key: 'personality',   label: '性格',      locked: false },
+  { key: 'health',        label: '健康',      locked: false },
+  // 7 个付费维度
+  { key: 'siblings',      label: '兄弟合伙',  locked: true },
+  { key: 'children',      label: '子女',      locked: true },
+  { key: 'migration',     label: '迁移外出',  locked: true },
+  { key: 'interpersonal', label: '人际贵人',  locked: true },
+  { key: 'property',      label: '田宅',      locked: true },
+  { key: 'mentality',     label: '福德',      locked: true },
+  { key: 'parents',       label: '父母长辈',  locked: true },
 ] as const;
 
 const TOPIC_PROMPTS: Record<string, string> = {
@@ -262,8 +264,6 @@ const TOPIC_PROMPTS: Record<string, string> = {
 
 **【一句话走调】**
 10-20 字古意短语收束。`,
-
-  // ── 7 个 LOCKED 主题的 prompt 模板（复用现有 6 套的多块结构）──
 
   siblings: `请深度解析兄弟合伙运（倪海厦体系），严格按以下多块结构输出：
 
@@ -511,26 +511,8 @@ const TOPIC_PROMPTS: Record<string, string> = {
 10-20 字古意短语收束。`,
 };
 
-const PALACE_ROLES: Record<string, string> = {
-  '命宫':   '自我、性格、先天格局',
-  '兄弟宫': '兄弟关系、合伙人',
-  '夫妻宫': '感情关系、婚姻状态',
-  '子女宫': '子女缘分、下属关系',
-  '财帛宫': '财运来源、收入方式',
-  '疾厄宫': '身体健康、意外',
-  '迁移宫': '外出机遇、人际格局',
-  '交友宫': '朋友圈、贵人、小人',
-  '官禄宫': '事业成就、社会地位',
-  '田宅宫': '不动产、家庭环境',
-  '福德宫': '精神享受、内心福分',
-  '父母宫': '父母关系、文书契约',
-};
-
-/** 升级专业版提示 modal（LOCKED 主题点击触发） */
-// 开发期开关：true = LOCKED 主题点击直接进入(不弹窗); 后期做付费时改为 false
-const DEV_BYPASS_LOCKED = true;
-
-function UpgradeModal({ topic, onClose }: { topic: string; onClose: () => void }) {
+/** 升级专业版提示 modal */
+function UpgradeModal({ topic, onClose, onActivate }: { topic: string; onClose: () => void; onActivate?: () => void }) {
   return (
     <AnimatePresence>
       <motion.div
@@ -555,35 +537,33 @@ function UpgradeModal({ topic, onClose }: { topic: string; onClose: () => void }
         >
           <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)' }}>✦</div>
           <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--t-text)' }}>
-            {topic} · 专业版解读
+            {topic} · 专业版
           </h3>
           <p className="text-[11px] leading-relaxed mb-4" style={{ color: 'var(--t-text2)' }}>
-            「{topic}」属于专业版解读，需升级后查看完整内容。<br />
-            升级后可解锁：十三宫全维解读 · 倪师批注 · 大限流年流月流日时辰多层对照。
+            「{topic}」属于专业版功能，需升级后使用。<br />
+            升级后可解锁：全维度深度解读 · 多轮 AI 对话 · 大限流年流月多层对照。
           </p>
           <div className="flex gap-2">
             <button
               onClick={onClose}
               className="flex-1 px-4 py-2 rounded-lg text-[11px] font-medium transition-all"
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--t-border)',
-                color: 'var(--t-text2)',
-              }}
+              style={{ background: 'transparent', border: '1px solid var(--t-border)', color: 'var(--t-text2)' }}
             >
               稍后
             </button>
+            {onActivate && (
+              <button
+                onClick={onActivate}
+                className="flex-1 px-4 py-2 rounded-lg text-[11px] font-medium transition-all"
+                style={{ background: 'transparent', border: '1px solid rgba(212,168,67,0.25)', color: 'var(--t-gold)' }}
+              >
+                体验激活
+              </button>
+            )}
             <button
-              onClick={() => {
-                window.location.href = '/pricing';
-                onClose();
-              }}
+              onClick={() => { window.location.href = '/pricing'; onClose(); }}
               className="flex-1 px-4 py-2 rounded-lg text-[11px] font-medium transition-all"
-              style={{
-                background: 'rgba(212,168,67,0.18)',
-                border: '1px solid rgba(212,168,67,0.4)',
-                color: 'var(--t-gold)',
-              }}
+              style={{ background: 'rgba(212,168,67,0.18)', border: '1px solid rgba(212,168,67,0.4)', color: 'var(--t-gold)' }}
             >
               了解升级
             </button>
@@ -604,9 +584,7 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
         if (sectionMatch) {
           return (
             <div key={i} className="pt-3 pb-0.5 first:pt-0">
-              <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'var(--t-gold)' }}>
-                【{sectionMatch[1]}】
-              </span>
+              <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'var(--t-gold)' }}>【{sectionMatch[1]}】</span>
             </div>
           );
         }
@@ -614,105 +592,117 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
         const parts = line.split(/\*\*(.+?)\*\*/);
         return (
           <div key={i} className="text-[11px] leading-relaxed" style={{ color: 'var(--t-text2)' }}>
-            {parts.map((part, j) =>
-              j % 2 === 0
-                ? part
-                : <strong key={j} className="font-medium" style={{ color: 'var(--t-text)' }}>{part}</strong>
-            )}
+            {parts.map((part, j) => j % 2 === 0 ? part : <strong key={j} className="font-medium" style={{ color: 'var(--t-text)' }}>{part}</strong>)}
           </div>
         );
       })}
-      {streaming && (
-        <span
-          className="inline-block w-1.5 h-3 ml-0.5 animate-pulse rounded-sm align-middle"
-          style={{ background: 'var(--t-gold)', opacity: 0.6 }}
-        />
-      )}
+      {streaming && <span className="inline-block w-1.5 h-3 ml-0.5 animate-pulse rounded-sm align-middle" style={{ background: 'var(--t-gold)', opacity: 0.6 }} />}
     </div>
   );
 }
 
 export default function InsightPanel({ chart, selectedPalace, selectedSiHua, initialThreads, onThreadsChange }: InsightPanelProps) {
-  // 每维度独立线程：key 为维度 key（6 个主题 + 专项）。历史回载时用已存线程初始化
+  // ── 顶层栏目：命盘分析 / AI 对话 ──
+  const [activeSection, setActiveSection] = useState<'analysis' | 'chat'>('analysis');
+
+  // ── 命盘分析栏目 ──
   const [threads, setThreads] = useState<Record<string, Message[]>>(() => initialThreads ?? {});
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingTab, setLoadingTab] = useState<string | null>(null);
 
-  const threadsRef = useRef<Record<string, Message[]>>(initialThreads ?? {}); // always-current copy for closures
-  const loadingRef = useRef(false);
-  const pendingRef = useRef<{ tab: string; text: string } | null>(null); // loading 期间排队
-  const lastPalaceBranch = useRef<number | undefined>(undefined);
-  const lastSiHuaKey = useRef<string | undefined>(undefined);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // ── AI 对话栏目 ──
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatNeedsReset, setChatNeedsReset] = useState(false);
 
-  // Keep refs in sync
+  // ── 收费分层 ──
+  const [uid] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'anonymous';
+    let u = localStorage.getItem('zw_uid');
+    if (!u) {
+      u = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('zw_uid', u);
+    }
+    return u;
+  });
+  const [deepAllowed, setDeepAllowed] = useState(false);
+  const [lockedTopic, setLockedTopic] = useState<string | null>(null);
+
+  // refs
+  const threadsRef = useRef<Record<string, Message[]>>(initialThreads ?? {});
+  const analysisScrollRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
+  const chatLoadingRef = useRef(false);
+
+  // sync refs
   useEffect(() => { threadsRef.current = threads; }, [threads]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
+  useEffect(() => { chatLoadingRef.current = chatLoading; }, [chatLoading]);
 
-  // 线程变化上报（400ms 防抖：流式期间每帧都在 setThreads，直接写会刷爆 localStorage）
+  // 订阅状态
+  useEffect(() => {
+    if (uid === 'anonymous') return;
+    fetch(`/api/plan?uid=${encodeURIComponent(uid)}`)
+      .then(r => r.json())
+      .then((d: { deepAllowed?: boolean }) => setDeepAllowed(!!d.deepAllowed))
+      .catch(() => setDeepAllowed(false));
+  }, [uid]);
+
+  // 维度线程上报（仅命盘分析）
   useEffect(() => {
     if (!onThreadsChange) return;
     const t = setTimeout(() => onThreadsChange(threads), 400);
     return () => clearTimeout(t);
   }, [threads, onThreadsChange]);
 
-  // Auto-scroll（只在当前维度的线程内滚动，不撑长整页）
+  // 命盘分析滚动
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (activeSection === 'analysis' && analysisScrollRef.current) {
+      analysisScrollRef.current.scrollTop = analysisScrollRef.current.scrollHeight;
     }
-  }, [threads, activeTab]);
+  }, [threads, activeTab, activeSection]);
 
-  // 不再挂载即自动生成解读（历史回载/首屏都只显示盘面 + 空面板，由用户点维度触发）
+  // AI 对话滚动
+  useEffect(() => {
+    if (activeSection === 'chat' && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages, activeSection]);
 
-  // 盘面宫位 → 主题 tab 映射（对齐 Metis 紫微官方行为：点宫位切到对应主题）
+  // 命盘变化时清空 AI 对话本地状态，并在下次发送时 reset 服务端历史
+  const chartKey = useMemo(() => {
+    const bi = chart.birthInfo;
+    return `${bi.year}-${bi.month}-${bi.day}-${bi.hour}-${bi.gender}`;
+  }, [chart.birthInfo]);
+  useEffect(() => {
+    setChatMessages([]);
+    setChatNeedsReset(true);
+  }, [chartKey]);
+
+  // 盘面宫位 → 主题 tab 映射
   const PALACE_TO_TOPIC: Record<string, string> = {
-    '命宫':   'personality',
-    '兄弟宫': 'siblings',
-    '夫妻宫': 'love',
-    '子女宫': 'children',
-    '财帛宫': 'wealth',
-    '疾厄宫': 'health',
-    '迁移宫': 'migration',
-    '交友宫': 'interpersonal',
-    '官禄宫': 'career',
-    '田宅宫': 'property',
-    '福德宫': 'mentality',
-    '父母宫': 'parents',
+    '命宫': 'personality', '兄弟宫': 'siblings', '夫妻宫': 'love', '子女宫': 'children',
+    '财帛宫': 'wealth', '疾厄宫': 'health', '迁移宫': 'migration', '交友宫': 'interpersonal',
+    '官禄宫': 'career', '田宅宫': 'property', '福德宫': 'mentality', '父母宫': 'parents',
   };
 
-  // Inject palace analysis when palace selected → 切到对应主题 tab（不占专项）
+  // 点击宫位：切到命盘分析对应主题
   useEffect(() => {
-    if (!selectedPalace || selectedPalace.branch === lastPalaceBranch.current) return;
-    lastPalaceBranch.current = selectedPalace.branch;
-
+    if (!selectedPalace) return;
     const topicKey = PALACE_TO_TOPIC[selectedPalace.name] ?? 'overview';
-    const topic = TOPICS.find(t => t.key === topicKey);
-    if (topic?.locked && !DEV_BYPASS_LOCKED) {
-      setLockedTopic(topic.label);
-      return;
-    }
-    setActiveTab(topicKey);
-    // 如果该主题还没 thread,触发首次生成
-    const has = (threadsRef.current[topicKey]?.length ?? 0) > 0;
-    if (!has) sendMessage(TOPIC_PROMPTS[topicKey] ?? '', true, topicKey);
+    setActiveSection('analysis');
+    selectAnalysisTab(topicKey, true);
   }, [selectedPalace]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 注入四化飞化分析 → 归入「专项」线程
+  // 四化飞化：切到命盘分析专项
   useEffect(() => {
     if (!selectedSiHua) return;
-    const key = `${selectedSiHua.starName}-${selectedSiHua.siHua}-${selectedSiHua.view}`;
-    if (key === lastSiHuaKey.current) return;
-    lastSiHuaKey.current = key;
-
-    const palaceOfStar = chart.palaces.find(p =>
-      p.stars.some(s => s.name === selectedSiHua.starName)
-    );
+    const palaceOfStar = chart.palaces.find(p => p.stars.some(s => s.name === selectedSiHua.starName));
     const palaceName = palaceOfStar?.name ?? '未知宫位';
     const viewLabel = selectedSiHua.view === 'daxian' ? '大限' : '流年';
-
     const prompt = `请分析【${viewLabel}${selectedSiHua.starName}化${selectedSiHua.siHua}】的飞化影响，按以下结构输出：
 
 **【化${selectedSiHua.siHua}基本含义】**
@@ -729,28 +719,65 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 
 **【实际建议】**
 基于此四化的具体可操作建议。`;
-
+    setActiveSection('analysis');
+    if (!deepAllowed) {
+      setLockedTopic('四化飞化');
+      return;
+    }
     setActiveTab(ADVISORY);
-    sendMessage(prompt, true, ADVISORY);
+    if ((threadsRef.current[ADVISORY]?.length ?? 0) === 0) {
+      generateAnalysis(prompt, ADVISORY, 'deep');
+    }
   }, [selectedSiHua]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const streamResponse = async (
-    apiMessages: { role: 'user' | 'assistant'; content: string }[],
-    tabKey: string,
-  ) => {
+  // ── 命盘分析：选择维度标签 ──
+  function selectAnalysisTab(topicKey: string, autoGenerate = false) {
+    const topic = TOPICS.find(t => t.key === topicKey);
+    if (topic?.locked && !deepAllowed) {
+      setLockedTopic(topic.label);
+      return;
+    }
+    setActiveTab(topicKey);
+    if (!autoGenerate) return;
+    if ((threadsRef.current[topicKey]?.length ?? 0) === 0) {
+      const plan = topic?.locked ? 'deep' : 'free';
+      generateAnalysis(TOPIC_PROMPTS[topicKey] ?? '', topicKey, plan);
+    }
+  }
+
+  const handleTabClick = (topicKey: string) => {
+    setActiveSection('analysis');
+    selectAnalysisTab(topicKey, true);
+  };
+
+  // ── 命盘分析：请求生成 ──
+  async function generateAnalysis(prompt: string, tabKey: string, plan: 'free' | 'deep') {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setLoadingTab(tabKey);
+
+    const userMsg: Message = { role: 'user', content: prompt, hidden: true };
+    setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), userMsg] }));
+
     try {
       const res = await fetch('/api/interpret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart, messages: apiMessages }),
+        body: JSON.stringify({ chart, messages: [userMsg], plan, uid }),
       });
+      if (res.status === 402) {
+        setLoading(false); setLoadingTab(null); loadingRef.current = false;
+        setLockedTopic(TOPICS.find(t => t.key === tabKey)?.label ?? '专业版解读');
+        setThreads(prev => ({ ...prev, [tabKey]: (prev[tabKey] ?? []).filter(m => m !== userMsg) }));
+        return;
+      }
       if (!res.ok) throw new Error('请求失败');
       if (!res.body) throw new Error('无响应流');
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = '';
-
       setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '' }] }));
 
       while (true) {
@@ -773,227 +800,283 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
         }
       }
     } catch {
-      setThreads(prev => ({
-        ...prev,
-        [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '解读失败，请稍后重试。' }],
-      }));
+      setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '解读失败，请稍后重试。' }] }));
     } finally {
       setLoading(false);
       setLoadingTab(null);
       loadingRef.current = false;
-      // 发送排队中的消息（用户在 loading 期间输入的问题）
-      if (pendingRef.current) {
-        const next = pendingRef.current;
-        pendingRef.current = null;
-        sendMessage(next.text, false, next.tab);
+    }
+  }
+
+  // ── AI 对话：发送消息 ──
+  async function sendChatMessage() {
+    const text = chatInput.trim();
+    if (!text || chatLoadingRef.current) return;
+    if (!deepAllowed) {
+      setLockedTopic('AI 对话');
+      return;
+    }
+
+    setChatInput('');
+    const userMsg: ChatMessage = { role: 'user', content: text };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatLoading(true);
+    chatLoadingRef.current = true;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, chart, message: text, reset: chatNeedsReset }),
+      });
+      if (chatNeedsReset) setChatNeedsReset(false);
+
+      if (res.status === 402) {
+        setChatLoading(false); chatLoadingRef.current = false;
+        setLockedTopic('AI 对话');
+        return;
       }
+      if (!res.ok) throw new Error('请求失败');
+      if (!res.body) throw new Error('无响应流');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = '';
+      setChatMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') break;
+          try {
+            const delta = JSON.parse(data).delta?.text ?? '';
+            assistantText += delta;
+            setChatMessages(prev => {
+              const arr = [...prev];
+              arr[arr.length - 1] = { role: 'assistant', content: assistantText };
+              return arr;
+            });
+          } catch { /* skip */ }
+        }
+      }
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'AI 对话失败，请稍后重试。' }]);
+    } finally {
+      setChatLoading(false);
+      chatLoadingRef.current = false;
     }
+  }
+
+  // MVP 体验激活
+  const activateDemo = async () => {
+    try {
+      await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid }) });
+      setDeepAllowed(true);
+    } catch { /* ignore */ }
+    setLockedTopic(null);
   };
 
-  const sendMessage = (text: string, hidden = false, tabKey: string = activeTab) => {
-    if (!text.trim()) return;
-    // loading 期间不丢弃：排队，等当前流式结束后自动发送
-    if (loadingRef.current) {
-      pendingRef.current = { tab: tabKey, text };
-      setInput('');
-      return;
-    }
-    loadingRef.current = true;
-    setLoading(true);
-    setLoadingTab(tabKey);
-
-    const userMsg: Message = { role: 'user', content: text, hidden };
-    // Capture current messages of this tab synchronously via ref (avoids stale closure)
-    const cur = threadsRef.current[tabKey] ?? [];
-    const apiMessages = [...cur, userMsg].map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), userMsg] }));
-    setInput('');
-    streamResponse(apiMessages, tabKey);
-  };
-
-  // 点击维度标签：切换并显示该维度；若尚未生成则触发生成；LOCKED 弹升级提示(开发期直通)
-  const [lockedTopic, setLockedTopic] = useState<string | null>(null);
-
-  const handleTabClick = (topicKey: string) => {
-    const topic = TOPICS.find(t => t.key === topicKey);
-    if (topic?.locked && !DEV_BYPASS_LOCKED) {
-      setLockedTopic(topic.label);
-      return;
-    }
-    setActiveTab(topicKey);
-    if (topicKey === ADVISORY) return; // 专项标签只在有内容时出现，不主动生成
-    const has = (threads[topicKey]?.length ?? 0) > 0;
-    if (!has) sendMessage(TOPIC_PROMPTS[topicKey] ?? '', true, topicKey);
-  };
-
-  const handleSend = () => {
-    sendMessage(input, false, activeTab);
-  };
-
-  // 标签集合：6 个免费维度 + 7 个 LOCKED + 专项（有内容或当前激活时显示）
+  // 渲染辅助
   const showAdvisory = activeTab === ADVISORY || (threads[ADVISORY]?.length ?? 0) > 0;
   const tabs = [...TOPICS, ...(showAdvisory ? [{ key: ADVISORY, label: '专项', locked: false }] : [])];
   const activeLabel = tabs.find(t => t.key === activeTab)?.label ?? '命理';
   const thread = threads[activeTab] ?? [];
   const isGenerating = loadingTab === activeTab && thread.length === 0;
-
-  // 雷达图数据：从本盘主星庙旺与格局推算 5 维 + 综合
   const radarData = useMemo(() => computeRadar(chart), [chart]);
 
   return (
-    <div
-      className="flex flex-col rounded-xl overflow-hidden card-glass"
-      style={{ maxHeight: 'calc(100vh + 100px)', minHeight: 360 }}
-    >
+    <div className="flex flex-col rounded-xl overflow-hidden card-glass" style={{ maxHeight: 'calc(100vh + 100px)', minHeight: 360 }}>
 
-      {/* ── 5 维雷达图（命盘分析顶部固定显示） ── */}
-      <div className="flex-shrink-0 px-2 pt-2.5 pb-1.5 flex flex-col items-center" style={{ borderBottom: '1px solid var(--t-border)' }}>
-        <RadarChart data={radarData} size={240} />
-        <p className="text-[9px] mt-1 tracking-wider" style={{ color: 'var(--t-faint)' }}>
-          点维度标签可查看对应解读 · 六维强度依本盘星曜庙旺与格局推算，仅供参考
-        </p>
-      </div>
-
-      {/* ── 维度标签（切换独立面板） ── */}
-      <div className="flex-shrink-0 px-2 pt-2 pb-2 flex flex-wrap gap-1" style={{ borderBottom: '1px solid var(--t-border)' }}>
-        {tabs.map(t => {
-          const isActive = activeTab === t.key;
-          const isLoading = loadingTab === t.key;
-          const tLocked = 'locked' in t && t.locked;
-          return (
-            <button
-              key={t.key}
-              onClick={() => handleTabClick(t.key)}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all duration-150"
-              style={{
-                background: isActive ? 'rgba(212,168,67,0.12)' : 'transparent',
-                border: `1px solid ${isActive ? 'rgba(212,168,67,0.3)' : 'var(--t-border)'}`,
-                color: isActive ? 'var(--t-gold)' : (tLocked ? 'var(--t-faint)' : 'var(--t-faint)'),
-                opacity: tLocked && !isActive ? 0.55 : 1,
-                cursor: tLocked ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {tLocked && <span style={{ fontSize: 8, opacity: 0.6 }}>🔒</span>}
-              {t.label}
-              {isLoading && (
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: 'var(--t-gold)', opacity: 0.7 }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── 当前维度线程（内部滚动，不撑长整页） ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-
-        {/* 空 / 生成中 状态 */}
-        {thread.length === 0 && (
-          isGenerating ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="text-4xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.1 }}>✦</div>
-              <p className="text-[10px] animate-pulse" style={{ color: 'var(--t-faint)' }}>解读生成中…</p>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
-              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--t-faint)' }}>
-                {activeTab === ADVISORY
-                  ? '点击命盘上的宫位或四化徽章，\n专项解读会显示在这里。'
-                  : `选择上方维度标签，\n生成对应的${activeLabel}解读。`}
-              </p>
-            </div>
-          )
-        )}
-
-        <AnimatePresence initial={false}>
-          {thread.map((msg, i) => {
-            if (msg.role === 'user' && msg.hidden) return null;
-
-            if (msg.role === 'user') {
-              return (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex justify-end"
-                >
-                  <div
-                    className="max-w-[85%] rounded-xl px-3 py-2 text-[11px]"
-                    style={{
-                      background: 'rgba(212,168,67,0.08)',
-                      border: '1px solid rgba(212,168,67,0.18)',
-                      color: 'var(--t-gold)',
-                    }}
-                  >
-                    {msg.content}
-                  </div>
-                </motion.div>
-              );
-            }
-
-            // Assistant message
-            const isLastMsg = i === thread.length - 1;
-            return (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <div
-                  className="text-[9px] tracking-widest mb-2 flex items-center gap-1.5"
-                  style={{ color: 'var(--t-faint)' }}
-                >
-                  <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
-                  {activeLabel}解读
-                </div>
-                <AiContent text={msg.content} streaming={loading && loadingTab === activeTab && isLastMsg} />
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </div>
-
-      {/* ── Input ── */}
-      <div className="flex-shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--t-border)' }}>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder={loading ? '正在解读中，输入后自动排队…' : `向「${activeLabel}」继续追问…`}
-            className="flex-1 rounded-lg px-3 py-2 text-[11px] focus:outline-none transition-colors"
-            style={{
-              background: 'var(--t-card)',
-              border: '1px solid var(--t-border)',
-              color: 'var(--t-text)',
-            }}
-          />
+      {/* ── 顶部栏目切换：命盘分析 / AI 对话 ── */}
+      <div className="flex-shrink-0 flex items-center px-3 pt-2.5 pb-2 gap-2" style={{ borderBottom: '1px solid var(--t-border)' }}>
+        {(['analysis', 'chat'] as const).map((sec) => (
           <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="px-3 py-2 rounded-lg text-[11px] font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            key={sec}
+            onClick={() => setActiveSection(sec)}
+            className="px-3 py-1.5 text-[12px] font-medium rounded-lg transition-all"
             style={{
-              background: 'rgba(212,168,67,0.15)',
-              border: '1px solid rgba(212,168,67,0.25)',
-              color: 'var(--t-gold)',
+              background: activeSection === sec ? 'rgba(212,168,67,0.12)' : 'transparent',
+              border: `1px solid ${activeSection === sec ? 'rgba(212,168,67,0.35)' : 'var(--t-border)'}`,
+              color: activeSection === sec ? 'var(--t-gold)' : 'var(--t-text2)',
             }}
           >
-            {loading ? '…' : '追问'}
+            {sec === 'analysis' ? '命盘分析' : 'AI 对话'}
           </button>
-        </div>
+        ))}
       </div>
 
-      {/* ── 升级专业版 modal（LOCKED 主题点击触发） ── */}
+      {activeSection === 'analysis' && (
+        <>
+          {/* ── 雷达图 ── */}
+          <div className="flex-shrink-0 px-2 pt-2.5 pb-1.5 flex flex-col items-center" style={{ borderBottom: '1px solid var(--t-border)' }}>
+            <RadarChart data={radarData} size={240} />
+            <p className="text-[9px] mt-1 tracking-wider" style={{ color: 'var(--t-faint)' }}>
+              点维度标签查看免费解读 · 剩余维度需升级专业版
+            </p>
+          </div>
+
+          {/* ── 维度标签 ── */}
+          <div className="flex-shrink-0 px-2 pt-2 pb-2 flex flex-wrap gap-1" style={{ borderBottom: '1px solid var(--t-border)' }}>
+            {tabs.map(t => {
+              const isActive = activeTab === t.key;
+              const isLoading = loadingTab === t.key;
+              const tLocked = 'locked' in t && t.locked;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => handleTabClick(t.key)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all duration-150"
+                  style={{
+                    background: isActive ? 'rgba(212,168,67,0.12)' : 'transparent',
+                    border: `1px solid ${isActive ? 'rgba(212,168,67,0.3)' : 'var(--t-border)'}`,
+                    color: isActive ? 'var(--t-gold)' : 'var(--t-faint)',
+                    opacity: tLocked && !isActive ? 0.55 : 1,
+                    cursor: tLocked ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {tLocked && <span style={{ fontSize: 8, opacity: 0.6 }}>🔒</span>}
+                  {t.label}
+                  {isLoading && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--t-gold)', opacity: 0.7 }} />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── 维度解读内容 ── */}
+          <div ref={analysisScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            {thread.length === 0 ? (
+              isGenerating ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="text-4xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.1 }}>✦</div>
+                  <p className="text-[10px] animate-pulse" style={{ color: 'var(--t-faint)' }}>解读生成中…</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                  <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
+                  <p className="text-[11px] leading-relaxed" style={{ color: 'var(--t-faint)' }}>
+                    {activeTab === ADVISORY
+                      ? '点击命盘上的宫位或四化徽章，\n专项解读会显示在这里。'
+                      : `选择上方维度标签，\n生成对应的${activeLabel}解读。`}
+                  </p>
+                </div>
+              )
+            ) : (
+              <AnimatePresence initial={false}>
+                {thread.map((msg, i) => {
+                  if (msg.role === 'user' && msg.hidden) return null;
+                  if (msg.role === 'user') {
+                    return (
+                      <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
+                        <div className="max-w-[85%] rounded-xl px-3 py-2 text-[11px]" style={{ background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.18)', color: 'var(--t-gold)' }}>
+                          {msg.content}
+                        </div>
+                      </motion.div>
+                    );
+                  }
+                  const isLast = i === thread.length - 1;
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                      <div className="text-[9px] tracking-widest mb-2 flex items-center gap-1.5" style={{ color: 'var(--t-faint)' }}>
+                        <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
+                        {activeLabel}解读
+                      </div>
+                      <AiContent text={msg.content} streaming={loading && loadingTab === activeTab && isLast} />
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeSection === 'chat' && (
+        <>
+          {/* ── AI 对话消息区 ── */}
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            {chatMessages.length === 0 && !deepAllowed && (
+              <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
+                <p className="text-[11px] leading-relaxed mb-3" style={{ color: 'var(--t-faint)' }}>
+                  AI 对话为专业版功能。<br />
+                  可与命理师 AI 就多轮问题进行深入交流，结合本命盘、大限、流年给出解答。
+                </p>
+                <button
+                  onClick={() => setLockedTopic('AI 对话')}
+                  className="px-4 py-2 rounded-lg text-[11px] font-medium transition-all"
+                  style={{ background: 'rgba(212,168,67,0.15)', border: '1px solid rgba(212,168,67,0.3)', color: 'var(--t-gold)' }}
+                >
+                  升级专业版
+                </button>
+              </div>
+            )}
+            {chatMessages.length === 0 && deepAllowed && (
+              <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
+                <p className="text-[11px] leading-relaxed" style={{ color: 'var(--t-faint)' }}>
+                  已向 AI 命理师提供本盘数据，<br />
+                  可直接提问："我 2027 年的事业运如何？" 或 "感情中需要注意什么？"
+                </p>
+              </div>
+            )}
+            <AnimatePresence initial={false}>
+              {chatMessages.map((msg, i) => {
+                const isLast = i === chatMessages.length - 1;
+                if (msg.role === 'user') {
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
+                      <div className="max-w-[85%] rounded-xl px-3 py-2 text-[11px]" style={{ background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.18)', color: 'var(--t-gold)' }}>
+                        {msg.content}
+                      </div>
+                    </motion.div>
+                  );
+                }
+                return (
+                  <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                    <div className="text-[9px] tracking-widest mb-2 flex items-center gap-1.5" style={{ color: 'var(--t-faint)' }}>
+                      <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
+                      AI 命理师
+                    </div>
+                    <AiContent text={msg.content} streaming={chatLoading && isLast} />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          {/* ── AI 对话输入框 ── */}
+          <div className="flex-shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--t-border)' }}>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                placeholder={deepAllowed ? '输入问题，与 AI 命理师交流…' : '升级专业版后解锁 AI 对话'}
+                disabled={!deepAllowed || chatLoading}
+                className="flex-1 rounded-lg px-3 py-2 text-[11px] focus:outline-none transition-colors disabled:opacity-50"
+                style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)', color: 'var(--t-text)' }}
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={!deepAllowed || chatLoading || !chatInput.trim()}
+                className="px-3 py-2 rounded-lg text-[11px] font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(212,168,67,0.15)', border: '1px solid rgba(212,168,67,0.25)', color: 'var(--t-gold)' }}
+              >
+                {chatLoading ? '…' : '发送'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── 升级 modal ── */}
       {lockedTopic && (
-        <UpgradeModal topic={lockedTopic} onClose={() => setLockedTopic(null)} />
+        <UpgradeModal topic={lockedTopic} onClose={() => setLockedTopic(null)} onActivate={activateDemo} />
       )}
 
     </div>

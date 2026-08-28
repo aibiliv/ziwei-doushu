@@ -1,6 +1,9 @@
 /**
  * LLM Provider 抽象层（OpenAI 兼容协议）
  *
+ * iztro 官方托管模型亦经此层接入：AI_PROVIDER 含 iztro 时，streamChatCompletion
+ * 会委派给 lib/iztro.ts（OpenAI 兼容 SSE，自动带 language=zh），其余逻辑不变。
+ *
  * 设计目标：换模型 = 改 .env.local 配置，零代码改动。
  * 支持多 Provider 按序回退：AI_PROVIDER=agnes,deepseek 表示主用 agnes，
  * 请求失败时自动回退 deepseek。
@@ -9,15 +12,18 @@
  *   - agnes   : AGNES_API_KEY / AGNES_BASE_URL / AGNES_MODEL
  *   - deepseek: DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL / DEEPSEEK_MODEL
  *   - custom  : CUSTOM_API_KEY / CUSTOM_BASE_URL / CUSTOM_MODEL（任意兼容服务）
+ *   - iztro   : IZTRO_API_KEY / IZTRO_BASE_URL / IZTRO_MODEL（官方托管紫微/奇门）
  *
  * 注意：Anthropic（Claude）协议不同，需单独适配，未包含在此层。
  */
+import { streamIztroChat, type IztroModel } from './iztro';
 
 export interface ProviderConfig {
   name: string;
   apiKey: string;
   baseUrl: string;
   model: string;
+  maxTokens?: number;
 }
 
 const env = (k: string) => process.env[k];
@@ -54,6 +60,10 @@ export function getProviders(): ProviderConfig[] {
       case 'custom':
         p = configOf('custom', env('CUSTOM_API_KEY') ?? '', env('CUSTOM_BASE_URL'), 'https://api.openai.com/v1', env('CUSTOM_MODEL'), 'gpt-4o-mini');
         break;
+    case 'iztro':
+        p = configOf('iztro', env('IZTRO_API_KEY') ?? '', env('IZTRO_BASE_URL'), 'https://chat-api.iztro.com/v2', env('IZTRO_MODEL'), 'iztro-ziwei-v3');
+        if (p) p.maxTokens = 4096;
+        break;
     }
     if (p) providers.push(p);
   }
@@ -65,6 +75,18 @@ export async function streamChatCompletion(
   provider: ProviderConfig,
   messages: { role: string; content: string }[],
 ): Promise<Response | null> {
+  // iztro 走专用客户端（OpenAI 兼容 SSE，自动带 language=zh，不发送 temperature 以免触发拒收）
+  if (provider.name === 'iztro') {
+    try {
+      return await streamIztroChat(
+        messages as { role: 'system' | 'user' | 'assistant'; content: string }[],
+        { model: provider.model as IztroModel, maxTokens: provider.maxTokens },
+      );
+    } catch (e) {
+      console.error(`[LLM:iztro] 请求异常:`, (e as Error).message);
+      return null;
+    }
+  }
   try {
     const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
