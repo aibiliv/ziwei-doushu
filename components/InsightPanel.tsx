@@ -636,6 +636,8 @@ export default function InsightPanel({ chart, selectedPalace, selectedSiHua, ini
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
   const chatLoadingRef = useRef(false);
+  // 解读进行中被点击的其他分析 tab：暂存最后一次请求，结束后自动执行
+  const pendingGenerateRef = useRef<{ prompt: string; tabKey: string; plan: 'free' | 'deep' } | null>(null);
 
   // sync refs
   useEffect(() => { threadsRef.current = threads; }, [threads]);
@@ -752,7 +754,11 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 
   // ── 命盘分析：请求生成 ──
   async function generateAnalysis(prompt: string, tabKey: string, plan: 'free' | 'deep') {
-    if (loadingRef.current) return;
+    if (loadingRef.current) {
+      // 解读进行中：暂存最后一次请求（覆盖更早的），当前解读结束后自动执行
+      pendingGenerateRef.current = { prompt, tabKey, plan };
+      return;
+    }
     loadingRef.current = true;
     setLoading(true);
     setLoadingTab(tabKey);
@@ -780,11 +786,15 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       let assistantText = '';
       setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '' }] }));
 
+      let sseBuffer = ''; // 跨 chunk 拼接不完整行，避免 data 行被网络分包截断后整行丢失
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
+        sseBuffer += chunk;
+        const parts = sseBuffer.split('\n');
+        sseBuffer = parts.pop() ?? ''; // 保留最后一个不完整行，下一包拼接
+        for (const line of parts) {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') break;
@@ -805,6 +815,12 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       setLoading(false);
       setLoadingTab(null);
       loadingRef.current = false;
+      // 排队：执行解读期间被拦截的那次请求
+      if (pendingGenerateRef.current) {
+        const next = pendingGenerateRef.current;
+        pendingGenerateRef.current = null;
+        generateAnalysis(next.prompt, next.tabKey, next.plan);
+      }
     }
   }
 
@@ -844,11 +860,15 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       let assistantText = '';
       setChatMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
+      let sseBuffer = ''; // 跨 chunk 拼接不完整行，避免 data 行被网络分包截断后整行丢失
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
+        sseBuffer += chunk;
+        const parts = sseBuffer.split('\n');
+        sseBuffer = parts.pop() ?? ''; // 保留最后一个不完整行，下一包拼接
+        for (const line of parts) {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') break;
