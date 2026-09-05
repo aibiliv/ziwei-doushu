@@ -1,5 +1,6 @@
 'use client';
 import '@/lib/ziwei/iztro-brightness'; // 修正 iztro 太阴酉宫亮度（不→旺），须在排盘前执行
+import Link from 'next/link';
 import { useMemo, useRef, useState, type MouseEvent } from 'react';
 import BirthForm, { type BirthFormState } from '@/components/BirthForm';
 import InsightPanel from '@/components/InsightPanel';
@@ -256,7 +257,10 @@ export default function ChartPage() {
             <span className="sep" />
             <span>{hourLabel}</span>
           </div>
-          <div style={{ marginLeft: 'auto' }}>
+          <Link href="/cases" className="chart-back-btn" style={{ marginLeft: 'auto', textDecoration: 'none' }}>
+            名人案例
+          </Link>
+          <div style={{ marginLeft: 12 }}>
             <LangSelect value={lang} onChange={handleLangChange} />
           </div>
         </header>

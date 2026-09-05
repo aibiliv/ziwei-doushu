@@ -11,7 +11,9 @@ import { activatePro, getPlanState } from '@/lib/plan';
 export async function GET(req: Request) {
   const uid = new URL(req.url).searchParams.get('uid');
   if (!uid) return new Response(JSON.stringify({ error: '缺少 uid' }), { status: 400 });
-  return Response.json(await getPlanState(uid));
+  return new Response(JSON.stringify(await getPlanState(uid)), {
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 export async function POST(req: Request) {
@@ -19,5 +21,7 @@ export async function POST(req: Request) {
   const uid = body?.uid as string | undefined;
   if (!uid) return new Response(JSON.stringify({ error: '缺少 uid' }), { status: 400 });
   const state = await activatePro(uid);
-  return Response.json(state);
+  return new Response(JSON.stringify(state), {
+    headers: { 'content-type': 'application/json' },
+  });
 }
