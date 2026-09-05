@@ -11,7 +11,7 @@ import LangSelect, { getStoredLang, type ChartLang } from '@/components/LangSele
 import { generateChart } from '@/lib/ziwei/algorithm';
 import { useHistory, matchHistoryEntry, readStoredHistory, type HistoryInsights } from '@/lib/ziwei/history';
 import { formToBirthInfo } from '@/lib/ziwei/share';
-import type { BirthInfo, Palace, Star, ZiweiChart } from '@/lib/ziwei/types';
+import type { BirthInfo, Star, ZiweiChart } from '@/lib/ziwei/types';
 import { Iztrolabe } from 'react-iztro';
 import 'react-iztro/lib/Iztrolabe/Iztrolabe.css';
 import 'react-iztro/lib/Izpalace/Izpalace.css';
@@ -35,7 +35,7 @@ export default function ChartPage() {
   const [chart, setChart] = useState<ZiweiChart | null>(null);
   const [view, setView] = useState<TimeView>('mingpan');
   const [liunianYear, setLiunianYear] = useState(() => new Date().getFullYear());
-  const [selectedPalace, setSelectedPalace] = useState<Palace | null>(null);
+  // 注：点宫位不联动右侧解读面板（用户要求宫位与 tab 解绑），也暂不做盘面高亮
   const [selectedSiHua, setSelectedSiHua] = useState<{
     starName: string;
     siHua: string;
@@ -85,7 +85,6 @@ export default function ChartPage() {
     setChart(generateChart(info));
     setView('mingpan');
     setActiveDaXianIndex(-1);
-    setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
 
@@ -219,22 +218,15 @@ export default function ChartPage() {
       }
     }
 
-    // 3) 宫位（.iztro-palace）→ 宫位解读
-    const palaceEl = target.closest('.iztro-palace');
-    if (palaceEl) {
-      const nameEl = palaceEl.querySelector('.iztro-palace-name-wrapper');
-      const palaceName = nameEl?.firstChild?.textContent?.trim();
-      if (!palaceName) return;
-      const palace = chart.palaces.find(p => p.name === palaceName);
-      if (palace) setSelectedPalace(palace);
-    }
+    // 3) 宫位（.iztro-palace）→ 故意不作为：宫位点击与右侧面板 tab 已解绑，
+    //    盘面三方四正/宫干四化高亮也已撤销（如需后续再启用另行处理）
+    return;
   };
 
   const resetChart = () => {
     setChart(null);
     setView('mingpan');
     setActiveDaXianIndex(-1);
-    setSelectedPalace(null);
     setSelectedSiHua(null);
     setSelectedStar(null);
     setActiveHistoryId(null);
@@ -319,7 +311,6 @@ export default function ChartPage() {
             <PatternsCard chart={chart} />
             <InsightPanel
               chart={chart}
-              selectedPalace={selectedPalace}
               selectedSiHua={selectedSiHua}
               initialThreads={initialThreads ?? undefined}
               onThreadsChange={handleThreadsChange}

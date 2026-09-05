@@ -54,13 +54,19 @@ function brightnessLabel(b: 'bright' | 'normal' | 'dim' | undefined): string {
   return '平和';
 }
 
+// 注意：generateChart 的宫名无"宫"后缀（官禄/财帛/夫妻/疾厄，唯命宫带后缀），
+// 查表必须用实际宫名；展示时统一补"宫"（命宫除外）
 const PALACE_NAME_MAP: Record<RadarDimensionKey, string> = {
-  career: '官禄宫',
-  wealth: '财帛宫',
-  love: '夫妻宫',
+  career: '官禄',
+  wealth: '财帛',
+  love: '夫妻',
   personality: '命宫',
-  health: '疾厄宫',
+  health: '疾厄',
 };
+
+function displayPalaceName(name: string): string {
+  return name.endsWith('宫') ? name : `${name}宫`;
+}
 
 const LABEL_MAP: Record<RadarDimensionKey, string> = {
   career: '事业',
@@ -78,7 +84,7 @@ export function computeRadar(chart: ZiweiChart): RadarData {
       return {
         key,
         label: LABEL_MAP[key],
-        palaceName,
+        palaceName: displayPalaceName(palaceName),
         starName: '—',
         brightness: undefined,
         score: 60,
@@ -90,7 +96,7 @@ export function computeRadar(chart: ZiweiChart): RadarData {
     return {
       key,
       label: LABEL_MAP[key],
-      palaceName,
+      palaceName: displayPalaceName(palaceName),
       starName: best?.name ?? (isBorrowed ? '空宫借对宫' : '—'),
       brightness: best?.brightness,
       score: brightnessToScore(best?.brightness),

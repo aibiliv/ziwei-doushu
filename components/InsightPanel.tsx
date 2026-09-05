@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { ZiweiChart, Palace } from '@/lib/ziwei/types';
+import type { ZiweiChart } from '@/lib/ziwei/types';
 import type { TimeView } from './TimeNav';
 import RadarChart from './RadarChart';
 import { computeRadar } from '@/lib/ziwei/radar';
@@ -24,7 +24,6 @@ interface SelectedSiHua {
 
 interface InsightPanelProps {
   chart: ZiweiChart;
-  selectedPalace?: Palace | null;
   selectedSiHua?: SelectedSiHua | null;
   initialThreads?: Record<string, Message[]>;
   onThreadsChange?: (threads: Record<string, Message[]>) => void;
@@ -601,7 +600,7 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
   );
 }
 
-export default function InsightPanel({ chart, selectedPalace, selectedSiHua, initialThreads, onThreadsChange }: InsightPanelProps) {
+export default function InsightPanel({ chart, selectedSiHua, initialThreads, onThreadsChange }: InsightPanelProps) {
   // ── 顶层栏目：命盘分析 / AI 对话 ──
   const [activeSection, setActiveSection] = useState<'analysis' | 'chat'>('analysis');
 
@@ -684,21 +683,8 @@ export default function InsightPanel({ chart, selectedPalace, selectedSiHua, ini
     setChatNeedsReset(true);
   }, [chartKey]);
 
-  // 盘面宫位 → 主题 tab 映射
-  const PALACE_TO_TOPIC: Record<string, string> = {
-    '命宫': 'personality', '兄弟宫': 'siblings', '夫妻宫': 'love', '子女宫': 'children',
-    '财帛宫': 'wealth', '疾厄宫': 'health', '迁移宫': 'migration', '交友宫': 'interpersonal',
-    '官禄宫': 'career', '田宅宫': 'property', '福德宫': 'mentality', '父母宫': 'parents',
-  };
-
-  // 点击宫位：切到命盘分析对应主题
-  useEffect(() => {
-    if (!selectedPalace) return;
-    const topicKey = PALACE_TO_TOPIC[selectedPalace.name] ?? 'overview';
-    setActiveSection('analysis');
-    selectAnalysisTab(topicKey, true);
-  }, [selectedPalace]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // 注：宫位点击不再联动本面板 tab（点击宫位只做盘面高亮：三方四正 + 宫干四化），
+  // 四化飞化徽章点击仍走下方 selectedSiHua → 专项 tab 联动。
   // 四化飞化：切到命盘分析专项
   useEffect(() => {
     if (!selectedSiHua) return;
