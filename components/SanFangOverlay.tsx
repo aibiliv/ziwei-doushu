@@ -91,8 +91,7 @@ export default function SanFangOverlay({
   }, [shellRef, chart, view, liunianYear, activeDaXianIndex]);
 
   if (!geo) return null;
-  // 本命视图不显示三方四正（隐藏原本本命的连线，保持盘面干净）
-  if (view === 'mingpan') return null;
+  // 本命视图也显示三方四正（以命宫为焦点，见 getFocusBranch 本命分支）
 
   const p0 = geo.pts[geo.focus];
   if (!p0) return null;
