@@ -5,10 +5,9 @@
 
 import { astro } from 'iztro';
 import { Solar } from 'lunar-javascript';
-import type { BirthInfo, LunarInfo, Star, Palace, DaXian, DaXianSiHua, ZiweiChart } from './types';
+import type { BirthInfo, LunarInfo, Star, Palace, DaXian, ZiweiChart } from './types';
 import { BRANCHES, STEMS } from './constants';
-// 飞星派工具仅供导出，不再在排盘时调用（倪师《天纪 03》：四化星永远固定不动）
-// import { detectSelfSihua, getSiHuaByStem } from './sihua';
+import { getSiHuaByStem } from './sihua';
 
 // ─── 农历信息（兼容保留）────────────────────────────────────────
 export function getLunarInfo(year: number, month: number, day: number): LunarInfo {
@@ -144,17 +143,34 @@ export function generateChart(birthInfo: BirthInfo): ZiweiChart {
   const ziweiPalace = palaces.find(p => p.stars.some(s => s.name === '紫微' && s.type === 'major'));
   const ziweiPos    = ziweiPalace?.branch ?? 0;
 
-  // ── 大限数组（倪师《天纪》正统：四化永远固定，大限只看宫位移动）──
-  // 不再生成 daXians[].siHua / stemIndex / stemName（飞星派字段已下线）
+  // ── 大限数组 ─────────────────────────────────────────────────────
+  // 本命解读口径（倪师《天纪》：本命四化固定不动）不受影响；
+  // daXians 补齐 stemIndex/stemName/siHua（可选字段，向后兼容）——
+  // 供「运限层」使用：大限宫干四化飞布（limit.ts / prompt.ts / TimeNav / 盘面 overlay）。
+  // 大限宫干 = 大限命宫所在本命宫位的宫干（palace.stem，iztro heavenlyStem 填充）
   const daXians: DaXian[] = palaces
     .filter(p => p.daXianAge)
     .sort((a, b) => a.daXianAge![0] - b.daXianAge![0])
-    .map(p => ({
-      startAge:    p.daXianAge![0],
-      endAge:      p.daXianAge![1],
-      palaceBranch: p.branch,
-      palaceName:   p.name,
-    }));
+    .map(p => {
+      const stemIndex = p.stem >= 0 ? p.stem : 0;
+      const sh = getSiHuaByStem(stemIndex);
+      return {
+        startAge:    p.daXianAge![0],
+        endAge:      p.daXianAge![1],
+        palaceBranch: p.branch,
+        palaceName:   p.name,
+        stemIndex,
+        stemName:     STEMS[stemIndex] ?? '',
+        siHua: {
+          stemIndex,
+          stemName: STEMS[stemIndex] ?? '',
+          lu:   sh.禄,
+          quan: sh.权,
+          ke:   sh.科,
+          ji:   sh.忌,
+        },
+      };
+    });
 
   // 宫干自化已下线（倪师不主张飞星派宫干自化论）
 
