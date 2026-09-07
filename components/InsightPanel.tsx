@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ZiweiChart } from '@/lib/ziwei/types';
+import { STEMS, BRANCHES } from '@/lib/ziwei/constants';
 import type { TimeView } from './TimeNav';
 import RadarChart from './RadarChart';
 import { computeRadar } from '@/lib/ziwei/radar';
@@ -27,7 +28,40 @@ interface InsightPanelProps {
   selectedSiHua?: SelectedSiHua | null;
   initialThreads?: Record<string, Message[]>;
   onThreadsChange?: (threads: Record<string, Message[]>) => void;
+  /** ── 运限解读增强（全部可选；缺省 = 本命模式，UI/逻辑零变化，兼容 cases 等旧调用）── */
+  /** 当前运限视图；view!=='mingpan' 时命盘分析栏出现「此大限/流年运势」入口 */
+  view?: TimeView;
+  /** 当前流年年份（view='liunian' 时随 TimeNav 变化） */
+  liunianYear?: number;
+  /** 当前选中大限索引（view='daxian' 时；-1 或缺省 = 跟随 currentDaXianIndex） */
+  activeDaXianIndex?: number;
 }
+
+/**
+ * 运限解读线程 key 命名空间：dx-{daXianIndex} / ln-{year}。
+ * 独立于本命 13 维线程（TOPICS keys），也不写入 localStorage 历史
+ * （历史结构不变；onThreadsChange 只上报本命 threads，见下方 effect）。
+ */
+const scopeKeyOf = (view: TimeView | undefined, dxIndex: number, year: number): string | null => {
+  if (view === 'daxian' && dxIndex >= 0) return `dx-${dxIndex}`;
+  if (view === 'liunian' && year > 0) return `ln-${year}`;
+  return null;
+};
+
+/** 运限线程标题（快照回看时用） */
+function scopeThreadTitle(key: string): string {
+  if (key.startsWith('dx-')) return '大限运势解读';
+  if (key.startsWith('ln-')) return '流年运势解读';
+  return '运限解读';
+}
+
+/** 宫名归一：iztro palace.name 除「命宫」外均无「宫」后缀 */
+function palaceFullName(name: string): string {
+  return name.endsWith('宫') ? name : `${name}宫`;
+}
+
+/** 解读线程的两种存储：native = 本命 13 维（可写历史）；scope = 运限（不写历史） */
+type AnalysisStore = 'native' | 'scope';
 
 /** 专项解读（宫位 / 四化飞化）在命盘分析栏目内 */
 const ADVISORY = 'advisory';
@@ -600,13 +634,24 @@ function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
   );
 }
 
-export default function InsightPanel({ chart, selectedSiHua, initialThreads, onThreadsChange }: InsightPanelProps) {
+export default function InsightPanel({
+  chart,
+  selectedSiHua,
+  initialThreads,
+  onThreadsChange,
+  view = 'mingpan',
+  liunianYear,
+  activeDaXianIndex,
+}: InsightPanelProps) {
   // ── 顶层栏目：命盘分析 / AI 对话 ──
   const [activeSection, setActiveSection] = useState<'analysis' | 'chat'>('analysis');
 
   // ── 命盘分析栏目 ──
   const [threads, setThreads] = useState<Record<string, Message[]>>(() => initialThreads ?? {});
   const [activeTab, setActiveTab] = useState<string>('overview');
+  // ── 运限解读增强：运限线程独立存储（key = dx-{i} / ln-{year}），与 threads（本命 13 维）隔离 ──
+  const [scopeThreads, setScopeThreads] = useState<Record<string, Message[]>>({});
+  const [scopeKey, setScopeKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingTab, setLoadingTab] = useState<string | null>(null);
 
@@ -631,15 +676,23 @@ export default function InsightPanel({ chart, selectedSiHua, initialThreads, onT
 
   // refs
   const threadsRef = useRef<Record<string, Message[]>>(initialThreads ?? {});
+  const scopeThreadsRef = useRef<Record<string, Message[]>>({});
   const analysisScrollRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
   const chatLoadingRef = useRef(false);
-  // 解读进行中被点击的其他分析 tab：暂存最后一次请求，结束后自动执行
-  const pendingGenerateRef = useRef<{ prompt: string; tabKey: string; plan: 'free' | 'deep' } | null>(null);
+  // 解读进行中被点击的其他分析 tab：暂存最后一次请求（本命/运限通用），结束后自动执行
+  const pendingGenerateRef = useRef<{
+    prompt: string;
+    key: string;
+    plan: 'free' | 'deep';
+    store: AnalysisStore;
+    extraBody?: Record<string, unknown>;
+  } | null>(null);
 
   // sync refs
   useEffect(() => { threadsRef.current = threads; }, [threads]);
+  useEffect(() => { scopeThreadsRef.current = scopeThreads; }, [scopeThreads]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
   useEffect(() => { chatLoadingRef.current = chatLoading; }, [chatLoading]);
 
@@ -664,7 +717,7 @@ export default function InsightPanel({ chart, selectedSiHua, initialThreads, onT
     if (activeSection === 'analysis' && analysisScrollRef.current) {
       analysisScrollRef.current.scrollTop = analysisScrollRef.current.scrollHeight;
     }
-  }, [threads, activeTab, activeSection]);
+  }, [threads, scopeThreads, activeTab, scopeKey, activeSection]);
 
   // AI 对话滚动
   useEffect(() => {
@@ -681,7 +734,120 @@ export default function InsightPanel({ chart, selectedSiHua, initialThreads, onT
   useEffect(() => {
     setChatMessages([]);
     setChatNeedsReset(true);
+    setScopeThreads({}); // 换命盘：运限解读线程一并清空（不落历史，无需回载）
+    setScopeKey(null);
   }, [chartKey]);
+
+  // ── 运限解读增强：解析当前运限（大限索引 / 流年） ──
+  // 大限索引：优先用户选中（activeDaXianIndex，-1 = 跟随当前年龄大限）
+  const scopeDxIndex = useMemo(() => {
+    if (!chart || view !== 'daxian') return -1;
+    const idx = (activeDaXianIndex ?? -1) >= 0 ? activeDaXianIndex! : chart.currentDaXianIndex;
+    return chart.daXians[idx] ? idx : -1;
+  }, [chart, view, activeDaXianIndex]);
+  // 流年：TimeNav 传入选年，缺省今年
+  const scopeYear = useMemo(() => {
+    if (view !== 'liunian') return 0;
+    const y = liunianYear ?? new Date().getFullYear();
+    return Number.isFinite(y) && y > 0 ? Math.floor(y) : 0;
+  }, [view, liunianYear]);
+  const currentScopeKey = useMemo(
+    () => scopeKeyOf(view, scopeDxIndex, scopeYear),
+    [view, scopeDxIndex, scopeYear],
+  );
+
+  // 运限入口元信息（label/说明/解读 prompt/请求体附加字段）
+  const scopeMeta = useMemo(() => {
+    if (view === 'daxian' && scopeDxIndex >= 0) {
+      const dx = chart.daXians[scopeDxIndex];
+      const stemChar = dx.stemName || (STEMS[chart.palaces.find(p => p.branch === dx.palaceBranch)?.stem ?? 0] ?? '');
+      const name = palaceFullName(dx.palaceName);
+      const ganZhi = `${stemChar}${BRANCHES[dx.palaceBranch] ?? ''}`;
+      return {
+        key: `dx-${scopeDxIndex}`,
+        label: `此大限运势 · ${name} · ${dx.startAge}–${dx.endAge}岁`,
+        shortLabel: `大限 · ${name}（${dx.startAge}-${dx.endAge}岁）`,
+        sub: `大限命宫叠于本命${name}（${ganZhi}）：宫职重叠 + 大限宫干四化飞布落宫（${stemChar}干）断此十年引动，免费生成`,
+        extraBody: { view: 'daxian' as const, daXianIndex: scopeDxIndex },
+        prompt: `请用四化飞星技法解读【当前所选大限】运势，严格按以下结构输出：
+
+**【大限定位 · 宫职重叠】**
+说明大限命宫落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准），此宫职领域如何成为这十年的人生主题。
+
+**【大限四化飞布】**
+按命盘上下文所列的大限四化（禄权科忌）飞布落宫逐一说明：每颗化星落入本命哪宫、引动哪个领域；不得自行另算四化。化忌落宫须重点展开——它是此十年最需留意的课题，给出具体的避忌方向。
+
+**【三方四正联动】**
+结合大限命宫所在本命宫位的三方四正（对宫与两个三合宫）与本命星曜配置，说明十年间事业/财运/感情/健康等的联动起伏节奏。
+
+**【十年分水岭】**
+点出此大限内最容易出现转折的年龄段（结合各流年地支年对应宫位简要提示）。
+
+**【实际建议】**
+3-5 句具体可执行的建议：顺势领域、谨慎领域、化忌落宫相关的避坑点。`,
+      };
+    }
+    if (view === 'liunian' && scopeYear > 0) {
+      const stemChar = STEMS[((scopeYear - 4) % 10 + 10) % 10];
+      const branchChar = BRANCHES[((scopeYear - 4) % 12 + 12) % 12];
+      return {
+        key: `ln-${scopeYear}`,
+        label: `此流年运势 · ${scopeYear}年`,
+        shortLabel: `流年 · ${scopeYear}`,
+        sub: `流年命宫 = ${scopeYear}年地支（${stemChar}${branchChar}年）落宫；以${stemChar}干四化飞布落宫断今年引动，免费生成`,
+        extraBody: { view: 'liunian' as const, liunianYear: scopeYear },
+        prompt: `请用四化飞星技法解读【当前所选流年（${scopeYear}年）】运势，严格按以下结构输出：
+
+**【流年定位 · 宫职重叠】**
+说明${scopeYear}年流年命宫（流年地支宫）落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准），此宫职领域如何成为这一年的主题。
+
+**【流年四化飞布】**
+按命盘上下文所列的流年四化（禄权科忌）飞布落宫逐一说明：每颗化星落入本命哪宫、引动哪个领域；不得自行另算四化。化忌落宫须重点展开——它是今年最需留意的课题，给出具体月份/季节的避忌提示（可参考流月干支走向简述）。
+
+**【三方四正联动】**
+结合流年命宫所在本命宫位的三方四正与本命星曜，说明今年事业/财运/感情/健康各领域的吉凶节奏。
+
+**【实际建议】**
+3-5 句具体可执行的建议：宜把握的机会窗口、宜谨慎的领域、化忌落宫相关的避坑点。`,
+      };
+    }
+    return null;
+  }, [view, scopeDxIndex, scopeYear, chart]);
+
+  // 盘面运限切换时的内容跟随策略：
+  //   - 回到本命视图 → 显示本命 13 维线程（scopeKey=null）；
+  //   - 正在阅读运限解读（scopeKey 非空）且运限变了（如流年换年/换大限）→ 跟随新运限线程；
+  //   - 本命阅读中切到运限视图（scopeKey 仍为 null）→ 不强切内容，只展示上方运限入口卡片。
+  //   生成请求只由用户点入口触发，避免切年即自动发请求。
+  useEffect(() => {
+    if (view === 'mingpan' || !currentScopeKey) {
+      setScopeKey(null);
+      return;
+    }
+    setScopeKey(prev => {
+      if (prev === null) return null; // 本命阅读中 → 不强切
+      return prev === currentScopeKey ? prev : currentScopeKey;
+    });
+  }, [view, currentScopeKey]);
+
+  // 运限解读入口点击：复用 generateAnalysis 管线（SSE/排队/渲染），plan=free 不加锁
+  // 语义：无内容 → 生成；有内容且空闲 → 重新生成（清空旧线程）；有内容但生成中 → 仅切视图查看
+  const handleScopeAnalyze = () => {
+    const meta = scopeMeta;
+    if (!meta) return;
+    setActiveSection('analysis');
+    const hasOld = (scopeThreadsRef.current[meta.key]?.length ?? 0) > 0;
+    if (hasOld && !loadingRef.current) {
+      setScopeThreads(prev => ({ ...prev, [meta.key]: [] })); // 清空旧线程
+      generateAnalysis(meta.prompt, meta.key, 'free', { store: 'scope', extraBody: meta.extraBody });
+      setScopeKey(meta.key);
+      return;
+    }
+    setScopeKey(meta.key);
+    if (!hasOld) {
+      generateAnalysis(meta.prompt, meta.key, 'free', { store: 'scope', extraBody: meta.extraBody });
+    }
+  };
 
   // 注：宫位点击不再联动本面板 tab（点击宫位只做盘面高亮：三方四正 + 宫干四化），
   // 四化飞化徽章点击仍走下方 selectedSiHua → 专项 tab 联动。
@@ -708,6 +874,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 **【实际建议】**
 基于此四化的具体可操作建议。`;
     setActiveSection('analysis');
+    setScopeKey(null); // 专项 tab 属于本命 13 维线程，退出运限视图
     if (!deepAllowed) {
       setLockedTopic('四化飞化');
       return;
@@ -725,6 +892,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       setLockedTopic(topic.label);
       return;
     }
+    setScopeKey(null); // 点本命维度标签 → 退出运限解读视图
     setActiveTab(topicKey);
     if (!autoGenerate) return;
     if ((threadsRef.current[topicKey]?.length ?? 0) === 0) {
@@ -738,30 +906,43 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
     selectAnalysisTab(topicKey, true);
   };
 
-  // ── 命盘分析：请求生成 ──
-  async function generateAnalysis(prompt: string, tabKey: string, plan: 'free' | 'deep') {
+  // ── 命盘分析：请求生成（native = 本命 13 维写 threads；scope = 运限写 scopeThreads）──
+  async function generateAnalysis(
+    prompt: string,
+    key: string,
+    plan: 'free' | 'deep',
+    opts?: { store?: AnalysisStore; extraBody?: Record<string, unknown> },
+  ) {
+    const store = opts?.store ?? 'native';
     if (loadingRef.current) {
       // 解读进行中：暂存最后一次请求（覆盖更早的），当前解读结束后自动执行
-      pendingGenerateRef.current = { prompt, tabKey, plan };
+      pendingGenerateRef.current = { prompt, key, plan, store, extraBody: opts?.extraBody };
       return;
     }
     loadingRef.current = true;
     setLoading(true);
-    setLoadingTab(tabKey);
+    setLoadingTab(key);
+
+    // 按 store 分派线程写入（scope 线程不写回历史：onThreadsChange 只监听 threads）
+    const patchThreads = (updater: (arr: Message[]) => Message[]) => {
+      const patch = (prev: Record<string, Message[]>) => ({ ...prev, [key]: updater(prev[key] ?? []) });
+      if (store === 'scope') setScopeThreads(patch);
+      else setThreads(patch);
+    };
 
     const userMsg: Message = { role: 'user', content: prompt, hidden: true };
-    setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), userMsg] }));
+    patchThreads(arr => [...arr, userMsg]);
 
     try {
       const res = await fetch('/api/interpret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart, messages: [userMsg], plan, uid }),
+        body: JSON.stringify({ chart, messages: [userMsg], plan, uid, ...(opts?.extraBody ?? {}) }),
       });
       if (res.status === 402) {
         setLoading(false); setLoadingTab(null); loadingRef.current = false;
-        setLockedTopic(TOPICS.find(t => t.key === tabKey)?.label ?? '专业版解读');
-        setThreads(prev => ({ ...prev, [tabKey]: (prev[tabKey] ?? []).filter(m => m !== userMsg) }));
+        setLockedTopic(TOPICS.find(t => t.key === key)?.label ?? (store === 'scope' ? scopeThreadTitle(key) : '专业版解读'));
+        patchThreads(arr => arr.filter(m => m !== userMsg));
         return;
       }
       if (!res.ok) throw new Error('请求失败');
@@ -770,7 +951,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = '';
-      setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '' }] }));
+      patchThreads(arr => [...arr, { role: 'assistant', content: '' }]);
 
       let sseBuffer = ''; // 跨 chunk 拼接不完整行，避免 data 行被网络分包截断后整行丢失
       while (true) {
@@ -787,16 +968,16 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
           try {
             const delta = JSON.parse(data).delta?.text ?? '';
             assistantText += delta;
-            setThreads(prev => {
-              const arr = [...(prev[tabKey] ?? [])];
-              arr[arr.length - 1] = { role: 'assistant', content: assistantText };
-              return { ...prev, [tabKey]: arr };
+            patchThreads(arr => {
+              const a = [...arr];
+              a[a.length - 1] = { role: 'assistant', content: assistantText };
+              return a;
             });
           } catch { /* skip */ }
         }
       }
     } catch {
-      setThreads(prev => ({ ...prev, [tabKey]: [...(prev[tabKey] ?? []), { role: 'assistant', content: '解读失败，请稍后重试。' }] }));
+      patchThreads(arr => [...arr, { role: 'assistant', content: '解读失败，请稍后重试。' }]);
     } finally {
       setLoading(false);
       setLoadingTab(null);
@@ -805,7 +986,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       if (pendingGenerateRef.current) {
         const next = pendingGenerateRef.current;
         pendingGenerateRef.current = null;
-        generateAnalysis(next.prompt, next.tabKey, next.plan);
+        generateAnalysis(next.prompt, next.key, next.plan, { store: next.store, extraBody: next.extraBody });
       }
     }
   }
@@ -886,12 +1067,19 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
     setLockedTopic(null);
   };
 
-  // 渲染辅助
+  // 渲染辅助（thread 感知运限视图：scopeKey 非空 → 显示运限线程）
   const showAdvisory = activeTab === ADVISORY || (threads[ADVISORY]?.length ?? 0) > 0;
   const tabs = [...TOPICS, ...(showAdvisory ? [{ key: ADVISORY, label: '专项', locked: false }] : [])];
   const activeLabel = tabs.find(t => t.key === activeTab)?.label ?? '命理';
-  const thread = threads[activeTab] ?? [];
-  const isGenerating = loadingTab === activeTab && thread.length === 0;
+  const viewingScope = scopeKey !== null;
+  // scope 模式：activeTab 通常不匹配 scopeKey（dx-3 / ln-2026），标签行高亮退化为"无"
+  const thread = viewingScope
+    ? (scopeThreads[scopeKey ?? ''] ?? [])
+    : (threads[activeTab] ?? []);
+  const threadTitle = viewingScope
+    ? (scopeMeta?.key === scopeKey ? (scopeMeta.shortLabel ?? '运限解读') : scopeThreadTitle(scopeKey ?? ''))
+    : activeLabel;
+  const isGenerating = loadingTab === (viewingScope ? scopeKey : activeTab) && thread.length === 0;
   const radarData = useMemo(() => computeRadar(chart), [chart]);
 
   return (
@@ -924,6 +1112,42 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
               点维度标签查看免费解读 · 剩余维度需升级专业版
             </p>
           </div>
+
+          {/* ── 运限解读入口卡（大限/流年视图下出现；本命视图 scopeMeta=null 不渲染）── */}
+          {scopeMeta && (
+            <div className="flex-shrink-0 px-2 pt-1.5 pb-1.5">
+              <button
+                onClick={handleScopeAnalyze}
+                disabled={loading && loadingTab === scopeMeta.key}
+                className="w-full rounded-lg px-3 py-2 text-left transition-all hover:scale-[1.01] disabled:opacity-60"
+                style={{
+                  background: scopeKey === scopeMeta.key ? 'rgba(212,168,67,0.10)' : 'rgba(212,168,67,0.05)',
+                  border: `1px solid ${scopeKey === scopeMeta.key ? 'rgba(212,168,67,0.5)' : 'rgba(212,168,67,0.25)'}`,
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--t-gold)' }}>
+                    {scopeMeta.label}
+                  </span>
+                  <span className="text-[9px] flex-shrink-0 px-2 py-0.5 rounded-md font-medium"
+                    style={{
+                      background: 'rgba(212,168,67,0.15)',
+                      color: loading && loadingTab === scopeMeta.key ? 'var(--t-faint)' : 'var(--t-gold)',
+                    }}
+                  >
+                    {loading && loadingTab === scopeMeta.key
+                      ? '生成中…'
+                      : (scopeThreads[scopeMeta.key]?.length ?? 0) > 0
+                        ? '重新生成'
+                        : '生成解读'}
+                  </span>
+                </div>
+                <div className="text-[9px] mt-1 leading-relaxed" style={{ color: 'var(--t-faint)' }}>
+                  {scopeMeta.sub}
+                </div>
+              </button>
+            </div>
+          )}
 
           {/* ── 维度标签 ── */}
           <div className="flex-shrink-0 px-2 pt-2 pb-2 flex flex-wrap gap-1" style={{ borderBottom: '1px solid var(--t-border)' }}>
@@ -964,9 +1188,13 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
                 <div className="flex flex-col items-center justify-center h-full text-center px-4">
                   <div className="text-3xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.12 }}>✦</div>
                   <p className="text-[11px] leading-relaxed" style={{ color: 'var(--t-faint)' }}>
-                    {activeTab === ADVISORY
-                      ? '点击命盘上的宫位或四化徽章，\n专项解读会显示在这里。'
-                      : `选择上方维度标签，\n生成对应的${activeLabel}解读。`}
+                    {viewingScope
+                      ? `当前为${threadTitle}解读。
+点击上方卡片生成（免费），
+或切换维度标签回到本命解读。`
+                      : activeTab === ADVISORY
+                        ? '点击命盘上的宫位或四化徽章，\n专项解读会显示在这里。'
+                        : `选择上方维度标签，\n生成对应的${activeLabel}解读。`}
                   </p>
                 </div>
               )
@@ -988,9 +1216,9 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
                     <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
                       <div className="text-[9px] tracking-widest mb-2 flex items-center gap-1.5" style={{ color: 'var(--t-faint)' }}>
                         <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
-                        {activeLabel}解读
+                        {viewingScope ? threadTitle : `${activeLabel}解读`}
                       </div>
-                      <AiContent text={msg.content} streaming={loading && loadingTab === activeTab && isLast} />
+                      <AiContent text={msg.content} streaming={loading && loadingTab === (viewingScope ? scopeKey : activeTab) && isLast} />
                     </motion.div>
                   );
                 })}

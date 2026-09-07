@@ -2,7 +2,7 @@ import { BRANCHES } from '@/lib/ziwei/constants';
 import type { ZiweiChart } from '@/lib/ziwei/types';
 import { getProviders, streamChatCompletion, type ProviderConfig } from '@/lib/llm';
 import { getPlanState, consumeDeep } from '@/lib/plan';
-import { buildSystemPrompt, buildChartContext } from '@/lib/prompt';
+import { buildSystemPrompt, buildChartContext, type ChartContextView } from '@/lib/prompt';
 import { SSE_HEADERS, buildTransformStream } from '@/lib/sse';
 
 /**
@@ -84,6 +84,14 @@ export async function POST(req: Request) {
   // 分层：free = agnes（免费），deep = iztro（付费深度解读）
   const plan = body?.plan === 'deep' ? 'deep' : 'free';
   const uid = (body?.uid as string | undefined) ?? 'anonymous';
+  // 运限解读增强：透传 view/daXianIndex/liunianYear → buildChartContext(opts)
+  // （仅影响 prompt 的「=== 所选运限 ===」追加段；不改 plan/402/配额逻辑）
+  const chartView: ChartContextView | undefined =
+    body?.view === 'daxian' || body?.view === 'liunian' || body?.view === 'mingpan'
+      ? body.view
+      : undefined;
+  const daXianIndex = typeof body?.daXianIndex === 'number' ? body.daXianIndex : undefined;
+  const liunianYear = typeof body?.liunianYear === 'number' ? body.liunianYear : undefined;
 
   if (!chart) {
     return new Response(JSON.stringify({ error: '缺少 chart 数据' }), { status: 400 });
@@ -92,7 +100,7 @@ export async function POST(req: Request) {
   // 构造 LLM 消息：system + 命盘上下文 + 用户消息（InsightPanel 的 prompt 保留）
   const llmMessages: ChatMessage[] = [
     { role: 'system', content: buildSystemPrompt() },
-    { role: 'user', content: `以下是命盘数据，请基于此解读：\n${buildChartContext(chart)}` },
+    { role: 'user', content: `以下是命盘数据，请基于此解读：\n${buildChartContext(chart, { view: chartView, daXianIndex, liunianYear })}` },
     ...messages,
   ];
 

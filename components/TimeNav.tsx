@@ -9,6 +9,8 @@ interface TimeNavProps {
   chart: ZiweiChart;
   view: TimeView;
   liunianYear: number;
+  /** 用户临时选定的大限（可选；-1/缺省 = 跟随 currentDaXianIndex） */
+  activeDaXianIndex?: number;
   onViewChange: (view: TimeView) => void;
   onYearChange: (year: number) => void;
 }
@@ -51,10 +53,14 @@ export default function TimeNav({
   chart,
   view,
   liunianYear,
+  activeDaXianIndex,
   onViewChange,
   onYearChange,
 }: TimeNavProps) {
-  const currentDx = chart.daXians[chart.currentDaXianIndex];
+  // 选中大限：优先用户临时选定（DaXianYearNav 点卡），否则跟随当前年龄大限。
+  // （运限解读增强：四化说明行须与盘面/解读所选大限一致，而非固定当前大限）
+  const dxIdx = (activeDaXianIndex ?? -1) >= 0 ? activeDaXianIndex! : chart.currentDaXianIndex;
+  const currentDx = chart.daXians[dxIdx];
 
   // 计算当前叠加四化信息
   const getOverlayInfo = (): { stemName: string; overlay: Record<string, string> } | null => {

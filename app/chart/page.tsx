@@ -19,6 +19,7 @@ import 'react-iztro/lib/IzpalaceCenter/IzpalaceCenter.css';
 import 'react-iztro/lib/theme/default.css';
 import DaXianYearNav from '@/components/DaXianYearNav';
 import SanFangOverlay from '@/components/SanFangOverlay';
+import FeiBuOverlay from '@/components/FeiBuOverlay';
 
 const BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 
@@ -262,6 +263,7 @@ export default function ChartPage() {
           chart={chart}
           view={view}
           liunianYear={liunianYear}
+          activeDaXianIndex={activeDaXianIndex}
           onViewChange={setView}
           onYearChange={setLiunianYear}
         />
@@ -293,6 +295,14 @@ export default function ChartPage() {
                 liunianYear={liunianYear}
                 activeDaXianIndex={activeDaXianIndex}
               />
+              {/* 四化飞布角标：大限宫干/流年天干四化落宫标注（仅大限/流年视图） */}
+              <FeiBuOverlay
+                shellRef={shellRef}
+                chart={chart}
+                view={view}
+                liunianYear={liunianYear}
+                activeDaXianIndex={activeDaXianIndex}
+              />
             </div>
             {/* 大限 + 流年 快捷切换列表 */}
             <DaXianYearNav
@@ -314,6 +324,9 @@ export default function ChartPage() {
               selectedSiHua={selectedSiHua}
               initialThreads={initialThreads ?? undefined}
               onThreadsChange={handleThreadsChange}
+              view={view}
+              liunianYear={liunianYear}
+              activeDaXianIndex={activeDaXianIndex}
             />
           </div>
         </div>
