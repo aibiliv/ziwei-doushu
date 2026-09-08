@@ -2,7 +2,7 @@ import { BRANCHES } from '@/lib/ziwei/constants';
 import type { ZiweiChart } from '@/lib/ziwei/types';
 import { getProviders, streamChatCompletion, type ProviderConfig } from '@/lib/llm';
 import { getPlanState, consumeDeep } from '@/lib/plan';
-import { buildSystemPrompt, buildChartContext, type ChartContextView } from '@/lib/prompt';
+import { buildSystemPrompt, buildChartContext, type ChartContextView, type ChartSchool } from '@/lib/prompt';
 import { SSE_HEADERS, buildTransformStream } from '@/lib/sse';
 
 /**
@@ -50,7 +50,7 @@ function buildMockReply(chart: ZiweiChart, messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find(m => m.role === 'user');
   const prompt = lastUser?.content ?? '';
 
-  const head = `**【命格定性】**\n${c.gender}命，${c.wuxingJu}，命宫主星 ${c.majorStars}。整体格局以稳定与内在积累为底色。\n\n**【主星解读】**\n命宫主星 ${c.majorStars}，此配置偏重个人意志与目标感，行动力强，重视实际成果。吉星（${c.luckyStars}）入命，为机遇与人际带来助力。\n\n**【三方四正】**\n财帛、官禄、迁移三宫联动决定整体发展模式（MOCK 解读，配置 AGNES_API_KEY 后由 agnes-2.5-flash 输出完整分析）。\n\n**【当前大限】**\n当前行运至${c.daXian}，此阶段运势围绕该宫位领域展开。\n\n**【实际建议】**\n优势在于目标明确、行动力强；需留意煞星（${c.shaStars}）带来的节奏干扰与情绪波动。`;
+  const head = `**【命格定性】**\n${c.gender}命，${c.wuxingJu}，命宫主星 ${c.majorStars}。整体格局以稳定与内在积累为底色。\n\n**【主星解读】**\n命宫主星 ${c.majorStars}，此配置偏重个人意志与目标感，行动力强，重视实际成果。吉星（${c.luckyStars}）入命，为机遇与人际带来助力。\n\n**【三方四正】**\n财帛、官禄、迁移三宫联动决定整体发展模式（MOCK 解读，配置 AGNES_API_KEY 后由 agnes-3.0-flash 输出完整分析）。\n\n**【当前大限】**\n当前行运至${c.daXian}，此阶段运势围绕该宫位领域展开。\n\n**【实际建议】**\n优势在于目标明确、行动力强；需留意煞星（${c.shaStars}）带来的节奏干扰与情绪波动。`;
 
   if (prompt.includes('感情')) return `**【感情格局】**\n${c.gender}命，命宫主星 ${c.majorStars}，感情模式偏向直来直往，重视实际感受。\n\n**【夫妻宫分析】**\n夫妻宫星曜配置决定相处方式（MOCK 解读，配置 AGNES_API_KEY 后输出完整分析）。\n\n**【实际建议】**\n感情经营重在坦诚沟通与节奏把控。`;
   if (prompt.includes('事业')) return `**【事业格局】**\n命宫主星 ${c.majorStars}，事业心强，适合需要独立判断与专业深度的方向。\n\n**【官禄宫分析】**\n官禄宫配置决定成就模式（MOCK 解读，配置 AGNES_API_KEY 后输出完整分析）。\n\n**【实际建议】**\n聚焦主业深耕，善用吉星（${c.luckyStars}）带来的贵人缘。`;
@@ -92,6 +92,7 @@ export async function POST(req: Request) {
       : undefined;
   const daXianIndex = typeof body?.daXianIndex === 'number' ? body.daXianIndex : undefined;
   const liunianYear = typeof body?.liunianYear === 'number' ? body.liunianYear : undefined;
+  const school: ChartSchool = body?.school === 'feixing' ? 'feixing' : 'sanhe';
 
   if (!chart) {
     return new Response(JSON.stringify({ error: '缺少 chart 数据' }), { status: 400 });
@@ -99,8 +100,8 @@ export async function POST(req: Request) {
 
   // 构造 LLM 消息：system + 命盘上下文 + 用户消息（InsightPanel 的 prompt 保留）
   const llmMessages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
-    { role: 'user', content: `以下是命盘数据，请基于此解读：\n${buildChartContext(chart, { view: chartView, daXianIndex, liunianYear })}` },
+    { role: 'system', content: buildSystemPrompt(school) },
+    { role: 'user', content: `以下是命盘数据，请基于此解读：\n${buildChartContext(chart, { view: chartView, daXianIndex, liunianYear, school })}` },
     ...messages,
   ];
 

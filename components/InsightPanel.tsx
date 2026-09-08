@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { ZiweiChart } from '@/lib/ziwei/types';
+import type { ZiweiChart, ChartSchool } from '@/lib/ziwei/types';
 import { STEMS, BRANCHES } from '@/lib/ziwei/constants';
 import type { TimeView } from './TimeNav';
 import RadarChart from './RadarChart';
@@ -35,6 +35,8 @@ interface InsightPanelProps {
   liunianYear?: number;
   /** 当前选中大限索引（view='daxian' 时；-1 或缺省 = 跟随 currentDaXianIndex） */
   activeDaXianIndex?: number;
+  /** 解读学派：sanhe = 倪师三合（默认）/ feixing = 飞星；影响运限解读的 prompt 口径与请求体 */
+  school?: ChartSchool;
 }
 
 /**
@@ -640,6 +642,7 @@ export default function InsightPanel({
   initialThreads,
   onThreadsChange,
   view = 'mingpan',
+  school = 'sanhe',
   liunianYear,
   activeDaXianIndex,
 }: InsightPanelProps) {
@@ -738,6 +741,13 @@ export default function InsightPanel({
     setScopeKey(null);
   }, [chartKey]);
 
+  // 切换解读学派：scope 线程口径已变，清空并回到本命视图（native 13 维 threads 不受口径影响）
+  useEffect(() => {
+    setScopeThreads({});
+    setScopeKey(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [school]);
+
   // ── 运限解读增强：解析当前运限（大限索引 / 流年） ──
   // 大限索引：优先用户选中（activeDaXianIndex，-1 = 跟随当前年龄大限）
   const scopeDxIndex = useMemo(() => {
@@ -767,15 +777,34 @@ export default function InsightPanel({
         key: `dx-${scopeDxIndex}`,
         label: `此大限运势 · ${name} · ${dx.startAge}–${dx.endAge}岁`,
         shortLabel: `大限 · ${name}（${dx.startAge}-${dx.endAge}岁）`,
-        sub: `大限命宫叠于本命${name}（${ganZhi}）：宫职重叠 + 大限宫干四化飞布落宫（${stemChar}干）断此十年引动，免费生成`,
-        extraBody: { view: 'daxian' as const, daXianIndex: scopeDxIndex },
-        prompt: `请用四化飞星技法解读【当前所选大限】运势，严格按以下结构输出：
+        sub: school === 'feixing'
+          ? `大限命宫叠于本命${name}（${ganZhi}）：以${stemChar}干宫干四化飞布落宫断此十年引动，免费生成`
+          : `大限命宫叠于本命${name}（${ganZhi}）：引动该宫原局宫干${stemChar}四化断十年（三合口径，12年一轮），免费生成`,
+        extraBody: { view: 'daxian' as const, daXianIndex: scopeDxIndex, school },
+        prompt: school === 'feixing'
+          ? `请用四化飞星技法解读【当前所选大限】运势，严格按以下结构输出：
 
 **【大限定位 · 宫职重叠】**
 说明大限命宫落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准），此宫职领域如何成为这十年的人生主题。
 
 **【大限四化飞布】**
 按命盘上下文所列的大限四化（禄权科忌）飞布落宫逐一说明：每颗化星落入本命哪宫、引动哪个领域；不得自行另算四化。化忌落宫须重点展开——它是此十年最需留意的课题，给出具体的避忌方向。
+
+**【三方四正联动】**
+结合大限命宫所在本命宫位的三方四正（对宫与两个三合宫）与本命星曜配置，说明十年间事业/财运/感情/健康等的联动起伏节奏。
+
+**【十年分水岭】**
+点出此大限内最容易出现转折的年龄段（结合各流年地支年对应宫位简要提示）。
+
+**【实际建议】**
+3-5 句具体可执行的建议：顺势领域、谨慎领域、化忌落宫相关的避坑点。`
+          : `请以倪海厦《天纪》三合派口径解读【当前所选大限】运势（宫干引动四化），严格按以下结构输出：
+
+**【大限定位 · 宫位移与宫干引动】**
+说明大限命宫落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准）。大限命宫所落宫位的【原局宫干】即此大限引动之干（原局固定、10年一轮），此宫职领域成为这十年的人生舞台。
+
+**【大限四化引动】**
+以命盘上下文所给的大限四化（大限命宫原局宫干四化）为准，逐一说明每颗化星飞布落入本命哪宫、引动哪个领域；不得自行另算、不得改用流年天干。化忌落宫为此十年重点课题，须展开并给避忌方向。
 
 **【三方四正联动】**
 结合大限命宫所在本命宫位的三方四正（对宫与两个三合宫）与本命星曜配置，说明十年间事业/财运/感情/健康等的联动起伏节奏。
@@ -794,9 +823,18 @@ export default function InsightPanel({
         key: `ln-${scopeYear}`,
         label: `此流年运势 · ${scopeYear}年`,
         shortLabel: `流年 · ${scopeYear}`,
-        sub: `流年命宫 = ${scopeYear}年地支（${stemChar}${branchChar}年）落宫；以${stemChar}干四化飞布落宫断今年引动，免费生成`,
-        extraBody: { view: 'liunian' as const, liunianYear: scopeYear },
-        prompt: `请用四化飞星技法解读【当前所选流年（${scopeYear}年）】运势，严格按以下结构输出：
+        sub: school === 'feixing'
+          ? `流年命宫 = ${scopeYear}年地支（${stemChar}${branchChar}年）落宫；以${stemChar}干四化飞布落宫断今年引动，免费生成`
+          : `太岁宫 = ${scopeYear}年地支（${stemChar}${branchChar}年）落宫；引动太岁宫原局宫干四化断今年（三合口径），免费生成`,
+        extraBody: { view: 'liunian' as const, liunianYear: scopeYear, school },
+        prompt: school === 'feixing'
+          ? `请用四化飞星技法解读【当前所选流年（${scopeYear}年）】运势，严格按以下结构输出：
+
+**【大限背景 · 体用（先总后分）】**
+先简述此流年所处大限（以命盘上下文「=== 流年所处大限（体）===」段为准）：第几步大限、命宫落本命哪宫、十年主轴领域、大限四化引动。此大限是今年运势的宏观框架——本段 2-3 句即可。
+
+**【本命为根 · 底色与叠化】**
+回到本命盘（命盘上下文开头的十二宫配置与生年四化汇总）：指出流年命宫所落宫位及其三方在本命的星曜强弱与生年四化底色（此宫先天是强是弱、有根无根）。重点检查：流年/大限四化落宫是否与本命生年四化同宫叠加——生年禄+运限禄=双禄朝垣吉上吉；生年忌+运限忌=双忌夹击凶上加凶；运限化忌冲生年化禄之宫=先得后失。叠加处必须点名展开。
 
 **【流年定位 · 宫职重叠】**
 说明${scopeYear}年流年命宫（流年地支宫）落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准），此宫职领域如何成为这一年的主题。
@@ -808,11 +846,30 @@ export default function InsightPanel({
 结合流年命宫所在本命宫位的三方四正与本命星曜，说明今年事业/财运/感情/健康各领域的吉凶节奏。
 
 **【实际建议】**
+3-5 句具体可执行的建议：宜把握的机会窗口、宜谨慎的领域、化忌落宫相关的避坑点。`
+          : `请以倪海厦《天纪》三合派口径解读【当前所选流年（${scopeYear}年）】运势（太岁宫宫干引动四化），严格按以下结构输出：
+
+**【大限背景 · 体用（先总后分）】**
+先简述此流年所处大限（以命盘上下文「=== 流年所处大限（体）===」段为准）：第几步大限、命宫落本命哪宫、十年主轴领域、大限宫干四化引动。此大限是今年运势的宏观框架——本段 2-3 句即可。
+
+**【本命为根 · 底色与叠化】**
+回到本命盘（命盘上下文开头的十二宫配置与生年四化汇总）：指出太岁宫所落宫位及其三方在本命的星曜强弱与生年四化底色（此宫先天是强是弱、有根无根）。重点检查：流年/大限四化落宫是否与本命生年四化同宫叠加——生年禄+运限禄=双禄朝垣吉上吉；生年忌+运限忌=双忌夹击凶上加凶；运限化忌冲生年化禄之宫=先得后失。叠加处必须点名展开。
+
+**【流年定位 · 太岁宫宫干引动】**
+说明${scopeYear}年太岁宫（流年地支所落本命宫位）落在本命哪一宫（以命盘上下文「=== 所选运限 ===」段为准）。太岁宫【原局宫干】即今年引动之干（原局固定、12年一轮，非流年天干），此宫职领域成为今年的主题。
+
+**【流年四化引动】**
+以命盘上下文所给的流年四化（太岁宫原局宫干四化）为准，逐一说明每颗化星飞布落入本命哪宫、引动哪个领域；不得自行另算、不得改用流年天干。化忌落宫为今年重点课题，须展开并给避忌方向。
+
+**【三方四正联动】**
+结合太岁宫所在本命宫位的三方四正与本命星曜，说明今年事业/财运/感情/健康各领域的吉凶节奏。
+
+**【实际建议】**
 3-5 句具体可执行的建议：宜把握的机会窗口、宜谨慎的领域、化忌落宫相关的避坑点。`,
       };
     }
     return null;
-  }, [view, scopeDxIndex, scopeYear, chart]);
+  }, [view, scopeDxIndex, scopeYear, school, chart]);
 
   // 盘面运限切换时的内容跟随策略：
   //   - 回到本命视图 → 显示本命 13 维线程（scopeKey=null）；

@@ -19,6 +19,9 @@ export interface LunarInfo {
   isLeapMonth: boolean;
 }
 
+/** 解读学派：sanhe = 倪师三合派（默认，四化固定）/ feixing = 飞星派（运限四化随运限） */
+export type ChartSchool = 'sanhe' | 'feixing';
+
 export type SiHua = '禄' | '权' | '科' | '忌';
 
 export interface Star {

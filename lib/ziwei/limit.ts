@@ -14,9 +14,9 @@
  * 本文件全部为纯函数，可直接用 node --experimental-strip-types / tsc 单测（见 logs/test-run.txt）。
  */
 
-import type { Palace, SiHua, ZiweiChart } from './types';
-import { BRANCHES } from './constants';
-import { getDaXianSiHua, getLiuNianSiHua, getYearBranchIndex } from './sihua';
+import type { Palace, SiHua, ZiweiChart, ChartSchool } from './types';
+import { BRANCHES, STEMS } from './constants';
+import { getDaXianSiHua, getLiuNianSiHua, getYearStemIndex, getYearBranchIndex, getSiHuaByStem } from './sihua';
 
 /** 单颗四化星的飞布落宫信息 */
 export interface FeiBuLanding {
@@ -108,6 +108,20 @@ export function groupFeiBuByBranch(landings: FeiBuLanding[]): Record<number, Fei
 }
 
 /**
+ * 由公历年反推其所属大限索引（虚岁法：startAge 对应公历年 = 出生年 + startAge - 1）。
+ * 用于流年解读时注入「该流年所处大限」的背景上下文（大限为体、流年为用）。
+ */
+export function getDaXianIndexByYear(chart: ZiweiChart, year: number): number {
+  for (let i = 0; i < chart.daXians.length; i++) {
+    const dx = chart.daXians[i];
+    const startYear = chart.birthInfo.year + dx.startAge - 1;
+    const endYear = chart.birthInfo.year + dx.endAge - 1;
+    if (year >= startYear && year <= endYear) return i;
+  }
+  return chart.currentDaXianIndex;
+}
+
+/**
  * 大限四化飞布全量信息。
  * @param chart 命盘
  * @param dxIndex 大限索引（chart.daXians[dxIndex]）
@@ -135,18 +149,40 @@ export function getDaXianFeiBu(chart: ZiweiChart, dxIndex: number): DaXianFeiBu 
 /**
  * 流年四化飞布全量信息（流年命宫 = 流年地支宫，三合太岁口径，与 SanFangOverlay 一致）。
  */
-export function getLiuNianFeiBu(chart: ZiweiChart, year: number): LiuNianFeiBu | null {
+/**
+ * 流年四化飞布全量信息。
+ * 口径（school）：
+ *   - feixing（飞星派）：以流年【天干】起四化（60 年一轮，丙午 ≠ 甲午）；
+ *   - sanhe（三合派·宫干引动）：以【太岁宫 = 流年地支所落本命宫位】的原局宫干起四化
+ *     （原局宫干固定，12 年一轮：丙午、甲午、戊午…同引太岁宫同一宫干，四化相同）。
+ */
+export function getLiuNianFeiBu(
+  chart: ZiweiChart,
+  year: number,
+  school: ChartSchool = 'sanhe',
+): LiuNianFeiBu | null {
   if (!Number.isFinite(year)) return null;
-  const sh = getLiuNianSiHua(year);
-  const branch = getYearBranchIndex(year); // 流年地支索引（= 流年命宫地支，三合太岁口径）
+  const branch = getYearBranchIndex(year); // 流年地支索引（= 太岁宫/流年命宫地支）
   const palace = findPalaceByBranch(chart, branch);
-  const landings = computeFeiBu(chart, sh.transforms);
+  // 四化起干：feixing = 流年天干；sanhe = 太岁宫原局宫干（palace.stem，五虎遁排定固定）
+  let stemIndex: number;
+  if (school === 'sanhe') {
+    if (!palace) return null;
+    stemIndex = palace.stem;
+  } else {
+    stemIndex = getYearStemIndex(year);
+  }
+  const stemName = STEMS[stemIndex] ?? '';
+  const sh = getSiHuaByStem(stemIndex);
+  const transforms = { 禄: sh.禄, 权: sh.权, 科: sh.科, 忌: sh.忌 };
+  const landings = computeFeiBu(chart, transforms);
   return {
     year,
-    ganZhi: `${sh.stemName}${BRANCHES[branch] ?? ''}`,
+    ganZhi: `${stemName}${BRANCHES[branch] ?? ''}`, // sanhe = 太岁宫干支（宫干+地支）；feixing = 流年干支
     palaceBranch: branch,
     nativePalaceName: palace ? palaceFullName(palace.name) : '（未知宫位）',
-    transforms: sh.transforms,
+    transforms,
     landings,
   };
 }
+

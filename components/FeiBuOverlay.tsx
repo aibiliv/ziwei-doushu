@@ -8,7 +8,7 @@
 //           流年视图 → 所选流年（liunianYear）的四化飞布；本命视图 → 不显示。
 // 角标颜色与 TimeNav SIHUA_COLORS 一致：禄绿 / 权蓝 / 科黄 / 忌红。
 import { useEffect, useMemo, useState, type RefObject } from 'react';
-import type { ZiweiChart } from '@/lib/ziwei/types';
+import type { ZiweiChart, ChartSchool } from '@/lib/ziwei/types';
 import { type TimeView } from './TimeNav';
 import { getDaXianFeiBu, getLiuNianFeiBu, groupFeiBuByBranch, type FeiBuLanding } from '@/lib/ziwei/limit';
 
@@ -18,6 +18,8 @@ interface FeiBuOverlayProps {
   view: TimeView;
   liunianYear: number;
   activeDaXianIndex: number; // -1 = 跟随 currentDaXianIndex
+  /** 解读学派：sanhe = 流年取太岁宫原局宫干四化飞布；feixing = 流年天干四化飞布 */
+  school?: ChartSchool;
 }
 
 interface Pt {
@@ -41,6 +43,7 @@ export default function FeiBuOverlay({
   view,
   liunianYear,
   activeDaXianIndex,
+  school = 'sanhe',
 }: FeiBuOverlayProps) {
   const [geo, setGeo] = useState<{ w: number; h: number; pts: Record<number, Pt> } | null>(null);
 
@@ -52,7 +55,7 @@ export default function FeiBuOverlay({
       return f ? groupFeiBuByBranch(f.landings) : {};
     }
     if (view === 'liunian') {
-      const f = getLiuNianFeiBu(chart, liunianYear);
+      const f = getLiuNianFeiBu(chart, liunianYear, school);
       return f ? groupFeiBuByBranch(f.landings) : {};
     }
     return {};

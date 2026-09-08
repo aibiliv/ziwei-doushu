@@ -1,7 +1,7 @@
 'use client';
 import { motion } from 'framer-motion';
 import { STEMS, BRANCHES, SI_HUA_TABLE } from '@/lib/ziwei/constants';
-import type { ZiweiChart } from '@/lib/ziwei/types';
+import type { ZiweiChart, ChartSchool } from '@/lib/ziwei/types';
 
 export type TimeView = 'mingpan' | 'daxian' | 'liunian';
 
@@ -11,6 +11,8 @@ interface TimeNavProps {
   liunianYear: number;
   /** 用户临时选定的大限（可选；-1/缺省 = 跟随 currentDaXianIndex） */
   activeDaXianIndex?: number;
+  /** 解读学派：sanhe = 倪师三合（流年叠加显示太岁宫原局宫干四化）；feixing = 飞星（流年叠加显示流年天干四化） */
+  school?: ChartSchool;
   onViewChange: (view: TimeView) => void;
   onYearChange: (year: number) => void;
 }
@@ -54,6 +56,7 @@ export default function TimeNav({
   view,
   liunianYear,
   activeDaXianIndex,
+  school = 'sanhe',
   onViewChange,
   onYearChange,
 }: TimeNavProps) {
@@ -77,7 +80,10 @@ export default function TimeNav({
     }
 
     if (view === 'liunian') {
-      const stemIndex = getYearStemIndex(liunianYear);
+      // sanhe：流年地支所落宫位（太岁宫）的原局宫干四化（宫干固定，12年一轮）；feixing：流年天干四化
+      const stemIndex = school === 'feixing'
+        ? getYearStemIndex(liunianYear)
+        : (chart.palaces.find(p => p.branch === getYearZhiIndex(liunianYear))?.stem ?? getYearStemIndex(liunianYear));
       return {
         stemName: STEMS[stemIndex],
         overlay: buildSiHuaOverlay(stemIndex),

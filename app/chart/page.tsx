@@ -11,7 +11,7 @@ import LangSelect, { getStoredLang, type ChartLang } from '@/components/LangSele
 import { generateChart } from '@/lib/ziwei/algorithm';
 import { useHistory, matchHistoryEntry, readStoredHistory, type HistoryInsights } from '@/lib/ziwei/history';
 import { formToBirthInfo } from '@/lib/ziwei/share';
-import type { BirthInfo, Star, ZiweiChart } from '@/lib/ziwei/types';
+import type { BirthInfo, Star, ZiweiChart, ChartSchool } from '@/lib/ziwei/types';
 import { Iztrolabe } from 'react-iztro';
 import 'react-iztro/lib/Iztrolabe/Iztrolabe.css';
 import 'react-iztro/lib/Izpalace/Izpalace.css';
@@ -47,6 +47,9 @@ export default function ChartPage() {
   const [activeDaXianIndex, setActiveDaXianIndex] = useState<number>(-1);
   const [formKey, setFormKey] = useState(0);
   const [lang, setLang] = useState<ChartLang>(() => getStoredLang());
+  // 解读学派：当前固定倪师三合派（sanhe）。飞星派（feixing）代码路径保留但入口已屏蔽，
+  // 后续放开派系切换时：改回 useState + localStorage('zw-school')，并恢复下方切换按钮 UI 即可。
+  const school: ChartSchool = 'sanhe';
   // 解读 ↔ 历史绑定：当前命盘对应的历史条目 id 及其已存解读（回载时注入）
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [initialThreads, setInitialThreads] = useState<HistoryInsights | null>(null);
@@ -54,6 +57,7 @@ export default function ChartPage() {
   const lastSavedInsightsRef = useRef(''); // 防重复写回：与上次已存内容相同则跳过
   const { history, save: saveHistory, remove: removeHistory, updateInsights } = useHistory();
   const shellRef = useRef<HTMLDivElement>(null); // 盘面容器（三方四正 overlay 锚点）
+
 
   const handleLangChange = (v: ChartLang) => {
     setLang(v);
@@ -264,6 +268,7 @@ export default function ChartPage() {
           view={view}
           liunianYear={liunianYear}
           activeDaXianIndex={activeDaXianIndex}
+          school={school}
           onViewChange={setView}
           onYearChange={setLiunianYear}
         />
@@ -302,6 +307,7 @@ export default function ChartPage() {
                 view={view}
                 liunianYear={liunianYear}
                 activeDaXianIndex={activeDaXianIndex}
+                school={school}
               />
             </div>
             {/* 大限 + 流年 快捷切换列表 */}
@@ -327,6 +333,7 @@ export default function ChartPage() {
               view={view}
               liunianYear={liunianYear}
               activeDaXianIndex={activeDaXianIndex}
+              school={school}
             />
           </div>
         </div>

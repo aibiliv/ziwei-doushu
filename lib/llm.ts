@@ -52,7 +52,7 @@ export function getProviders(): ProviderConfig[] {
     let p: ProviderConfig | null = null;
     switch (name) {
       case 'agnes':
-        p = configOf('agnes', env('AGNES_API_KEY') ?? '', env('AGNES_BASE_URL'), 'https://apihub.agnes-ai.cn/v1', env('AGNES_MODEL'), 'agnes-2.5-flash');
+        p = configOf('agnes', env('AGNES_API_KEY') ?? '', env('AGNES_BASE_URL'), 'https://apihub.agnes-ai.cn/v1', env('AGNES_MODEL'), 'agnes-3.0-flash');
         break;
       case 'deepseek':
         p = configOf('deepseek', env('DEEPSEEK_API_KEY') ?? '', env('DEEPSEEK_BASE_URL'), 'https://api.deepseek.com/v1', env('DEEPSEEK_MODEL'), 'deepseek-chat');
@@ -99,7 +99,9 @@ export async function streamChatCompletion(
         messages,
         stream: true,
         temperature: 0.7,
-        max_tokens: 2048,
+        // agnes-3.0-flash 等推理模型：思维链(reasoning_content)与正文共享 token 预算，
+        // 2048 会被思考部分耗尽导致正文 0 输出 → 提到 8192；iztro 专用通道不受此影响
+        max_tokens: 8192,
       }),
     });
     if (!res.ok) {

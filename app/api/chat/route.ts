@@ -1,7 +1,7 @@
 import type { ZiweiChart } from '@/lib/ziwei/types';
 import { streamIztroChat } from '@/lib/iztro';
 import { getPlanState, consumeDeep, getChatHistory, appendChatHistory, clearChatHistory, type ChatMessage } from '@/lib/plan';
-import { buildSystemPrompt, buildChartContext } from '@/lib/prompt';
+import { buildSystemPrompt, buildChartContext, type ChartSchool } from '@/lib/prompt';
 import { SSE_HEADERS, buildTransformStream } from '@/lib/sse';
 
 /**
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
   const chart = body?.chart;
   const message = body?.message?.trim();
   const reset = !!body?.reset;
+  const school: ChartSchool = (body as { school?: string })?.school === 'feixing' ? 'feixing' : 'sanhe';
 
   if (!chart) {
     return new Response(JSON.stringify({ error: '缺少 chart 数据' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -64,8 +65,8 @@ export async function POST(req: Request) {
 
   // 4. 构造完整消息：system + 命盘上下文 + 历史 + 当前问题
   const llmMessages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
-    { role: 'user', content: `以下是命盘数据，请基于该命盘数据与用户持续对话：\n${buildChartContext(chart)}` },
+    { role: 'system', content: buildSystemPrompt(school) },
+    { role: 'user', content: `以下是命盘数据，请基于该命盘数据与用户持续对话：\n${buildChartContext(chart, { school })}` },
     ...history,
     userMsg,
   ];
